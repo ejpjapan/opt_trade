@@ -96,7 +96,7 @@ class GetRawCBOEOptionData:
 
     def update_data_files(self, temporary_file_directory):
         """ Download zip files from CBOE, unzip to csv, process and turn into feather
-        TO DO: Should be in separate simulation data update & fetch class that creates/updates database
+        TODO: Should be in separate simulation data update & fetch class that creates/updates database
          :rtype: Bool"""
         feather_directory = self.top_level_directory / 'feather'
         assert(feather_directory.is_dir())
@@ -176,7 +176,7 @@ class ImpliedVolatilityHistory:
 class DividendYieldHistory:
 
     def __init__(self):
-        self.dy_monthly = get_dividend_yield()
+        self.dy_monthly = get_sp5_dividend_yield()
 
     def save_dividend_yield_df(self, out_directory: Path, file_name='sp500_dividend_yld'):
         dividend_yield_df = self.dy_monthly.to_frame()
@@ -190,7 +190,7 @@ class ClosingPriceHistory:
         self.daily_close = get_daily_close(self.option_data_dates, str(feather_directory) + '/')
 
     def save_daily_close(self, output_directory):
-        feather.write_dataframe(self.daily_close, str(output_directory / 'sp500_close'))
+        write_feather(self.daily_close, str(output_directory / 'sp500_close'))
 
 
 def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
@@ -232,7 +232,7 @@ def get_vix():
     return fred_vix
 
 
-def get_dividend_yield():
+def get_sp5_dividend_yield():
     """Fetch dividend yield from Quandl'''
     :return: Dataframe
     """

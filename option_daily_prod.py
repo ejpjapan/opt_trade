@@ -268,17 +268,31 @@ class OptionMarket:
         return trd_choice
 
     def _option_tickers(self, ib, mkt_prices, num_expiries, z_score, right):
-        option_expiry = third_fridays(self.trade_date, num_expiries)
+        """ Retrieves valid option tickers based on theoretical strikes
 
+        :param ib: Interactive brokers connection
+        :param mkt_prices: List of underlying index and vol index prices
+        :param num_expiries (int): number of expirations
+        :param z_score (numpy array): Range of Z scores for theoretical option strikes
+        :param right (str) : Type of option P or C
+        :return: Option tickers
+        """
+        # option_expiry_1 = third_fridays(self.trade_date, num_expiries)
+
+        last_trade_dates_df = self.option_asset.get_expirations()
+        # TO DO Expiration is day after last trade date
+        # Might have to revisit for PM settled options
+        option_expiry = last_trade_dates_df.index[0:num_expiries] + pd.tseries.offsets.BDay(1)
+        option_expiry = option_expiry.date
         risk_free = self.zero_curve.get_zero4_date(option_expiry) / 100
+
         last_price = mkt_prices[0]
         sigma = mkt_prices[1] / 100
         theoretical_strikes = get_theoretical_strike(self.trade_date, option_expiry,
                                                      last_price, risk_free.values,
                                                      z_score, self.dividend_yield, sigma)
 
-        last_trade_dates_all = self.option_asset.get_expirations()
-        expiration_date_list = last_trade_dates_all['expirations'].iloc[0:num_expiries].tolist()
+        expiration_date_list = last_trade_dates_df['expirations'].iloc[0:num_expiries].tolist()
         theoretical_strike_list = theoretical_strikes.flatten().tolist()
         expiration_date_list = [item for item in expiration_date_list for i in range(num_expiries)]
         contracts = [self._get_closest_valid_contract(strike, expiration, ib, right) for strike, expiration in
@@ -319,7 +333,7 @@ class OptionMarket:
         return mkt_prices
 
     def _get_closest_valid_contract(self, theoretical_strike, expiration, ib, right='P'):
-        """Return valid contract for  expiration closest to theoretical_strike"""
+        """Return valid contract for expiration closest to theoretical_strike"""
         exchange = self.option_asset.chain.exchange
         symbol = self.option_asset.underlying_qc.symbol
         strikes_sorted = sorted(list(self.option_asset.chain.strikes),
@@ -333,7 +347,7 @@ class OptionMarket:
             qualified_contract = ib.qualifyContracts(contract)
 
         # Assertion to break when infinite loop exits after after ii > 1000
-        assert (len(qualified_contract) > 0)
+        assert len(qualified_contract) > 0, "No valid contracts found"
         return qualified_contract
 
     @staticmethod

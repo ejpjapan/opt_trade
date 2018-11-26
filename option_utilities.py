@@ -135,10 +135,12 @@ class USZeroYieldCurve:
         fed_zero_feather = Path(self.db_path / 'fedzero.feather')
         if fed_zero_feather.is_file():
             # load old file
+            seconds_since_upate = time() - fed_zero_feather.stat().st_mtime
             zero_yields_old = read_feather(str(fed_zero_feather))
             latest_business_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(1)
             if zero_yields_old.index[-1].date() != latest_business_date.date():
-                self.get_raw_zeros()
+                if seconds_since_upate > 86400:
+                    self.get_raw_zeros()
         else:
             self.get_raw_zeros()
         self.zero_yields = read_feather(str(fed_zero_feather))
@@ -170,7 +172,7 @@ class USZeroYieldCurve:
 
         zero_yld_curve = pd.DataFrame(data=np.transpose(zero_yld_curve.values),
                                       index=maturities, columns=[as_of_date])
-        # TO DO check 2nd order polynomial yield curve interpolation
+        # TODO check 2nd order polynomial yield curve interpolation
         zero_yld_curve = zero_yld_curve.resample('D').interpolate(method='polynomial', order=2)
         return zero_yld_curve.loc[maturity_date]
 
