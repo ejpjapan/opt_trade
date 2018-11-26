@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from ib_insync import IB, Index, Option
 from option_utilities import third_fridays, USSimpleYieldCurve, get_theoretical_strike
 from spx_data_update import DividendYieldHistory
+from ib_insync.util import isNan
 
 
 class OptionAsset(ABC):
@@ -118,7 +119,7 @@ class RSL2OptionAsset(OptionAsset):
         # TO DO: Change to RSL2 dividend yield
         dividend_yield_history = DividendYieldHistory()
         dividend_yield = dividend_yield_history.dy_monthly[-1] / 100
-        print('Warning: Using Fixed Dividend yield')
+        print('Warning: RSL2 Using Fixed Dividend yield')
         dividend_yield = 0.0134
 
         return dividend_yield
@@ -309,12 +310,10 @@ class OptionMarket:
 
     @staticmethod
     def _get_market_prices(ib, contracts):
-        nan = float('nan')
         tickers = ib.reqTickers(*contracts)
-        # mkt_prices = [ticker.marketPrice() for ticker in tickers]
         mkt_prices = [ticker.last if ticker.marketPrice() == ticker.close else ticker.marketPrice()
                       for ticker in tickers]
-        if any([True for item in mkt_prices if item == nan]):
+        if any([True for item in mkt_prices if isNan(item)]):
             mkt_prices = [ticker.marketPrice() for ticker in tickers]
 
         return mkt_prices
