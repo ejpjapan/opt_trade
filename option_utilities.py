@@ -93,7 +93,7 @@ def write_feather(dataframe: pd.DataFrame, source: str):
 
 
 def read_feather(source: str):
-    """ Wrapper function feather.read_dataframeadds row index as column and saves as feather"""
+    """ Wrapper function feather.read_dataframe adds row index as column and saves as feather"""
     out_df = feather.read_dataframe(source)
     out_df = out_df.set_index(['index'])
     return out_df

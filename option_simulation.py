@@ -16,8 +16,6 @@ from pathlib import Path
 from option_utilities import get_live_option_expiries, USZeroYieldCurve, get_theoretical_strike, read_feather
 from spx_data_update import UpdateSP500Data, get_dates
 
-import pandas_datareader.data as web
-
 
 class OptionSimulation:
     COL_NAMES = ['strike_traded', 'strike_theo', 'days_2_exp', 'zero', 'bid_eod', 'ask_eod']
@@ -37,62 +35,8 @@ class OptionSimulation:
         last_zero_date = self.usZeroYldCurve.zero_yields.index[-1]
         self.sim_dates_all = self.sim_param.index[self.sim_param.index <= last_zero_date]
 
-    # @property
-    # def get_dates(self):
-    #     """ Fetch dates from feather file names
-    #     :rtype: pd.DatetimeIndex
-    #     """
-    #     regex_pattern = r'\d{4}-\d{2}-\d{2}'  # this will fail if month>12 or days>31
-    #     opt_dates_list = []
-    #     for item in os.listdir(self.feather_directory):  # loop through items in dir
-    #         if item.endswith('.feather'):
-    #             date_string = re.search(regex_pattern, item)
-    #             if date_string:
-    #                 opt_dates_list.append(date_string.group())
-    #     opt_dates_list = list(set(opt_dates_list))
-    #     opt_dates_all = pd.DatetimeIndex([pd.to_datetime(date, yearfirst=True, \
-    #                                                      format='%Y-%m-%d') \
-    #                                       for date in opt_dates_list])
-    #     opt_dates_all = opt_dates_all.sort_values()
-    #     return opt_dates_all
-
-#     def load_data(self):
-#         """" Fetch vix, dividend yield, S&P 500 close and create yield curb object """
-#         # Get vix data
-#         vix = self.__get_vix()
-#         #Simulation dates depend on availability of VIX data from fred
-#         self.sim_dates_all = self.sim_dates_all.intersection(vix.index)
-#         # get S&P500 close
-#         sp500_close = get_sp500_close(self.sim_dates_all, self.feather_directory\
-#                                        / 'UnderlyingOptionsEODCalcs_')
-#         # get S&P 500 dividend yield
-#         dy_monthly = self.__get_div_yield()
-#         dy = dy_monthly.resample('B').backfill()
-# #        dy = dy.loc[self.sim_dates_all].fillna(method='pad').fillna(method='backfill')
-#         dy = dy.reindex(self.sim_dates_all).fillna(method='pad').fillna(method='backfill')
-#         mkt_data_daily = vix.copy()
-#         mkt_data_daily['sp500_close'] = sp500_close
-#         mkt_data_daily['dy'] = dy.loc[mkt_data_daily.index]
-#         self.option_model_inputs = mkt_data_daily
-
-    # def __get_vix(self):
-    #     ''' Fetch vix from FRED'''
-    #     fred_vix = web.DataReader(['VIXCLS'], 'fred', self.sim_dates_all[0], \
-    #                                self.sim_dates_all[-1])
-    #     fred_vix = fred_vix.copy().dropna()
-    #     return fred_vix
-
-    # def __get_div_yield(self):
-    #     ''' Fetch dividend yield from quandl or scrape from http://www.multpl.com'''
-    #     try:
-    #         dy_monthly = web.DataReader('MULTPL/SP500_DIV_YIELD_MONTH', \
-    #                                 'quandl', self.sim_dates_all[0], self.sim_dates_all[-1])
-    #     except:
-    #         dy_monthly = get_sp5_div_yield()
-    #     return dy_monthly
-
-    def __get_trade_dates(self, trade_dates=None, trade_type='EOM'):
-        '''Create trade dates datetime index'''
+    def _get_trade_dates(self, trade_dates=None, trade_type='EOM'):
+        """Create trade dates datetime index"""
         if trade_dates is None:
             # Add pre-cooked trade date recipes here
             month_diff = self.sim_dates_all.month[1:] - self.sim_dates_all.month[0:-1]
@@ -118,12 +62,11 @@ class OptionSimulation:
         assert not missing_dates, 'Trade dates are not a subset of simulation dates'
         return trade_dates
 
-    def __get_expiration_dates(self, option_duration_months):
+    def _get_expiration_dates(self, option_duration_months):
         '''Create expiration dates based on trade dates and number of expiry months'''
         # TODO: Generalize for option_duration_days
         expiration_theoretical = self.trade_dates + \
                                   pd.Timedelta(option_duration_months, unit='M')
-        # NEED to remove hours
         expiration_theoretical = pd.DatetimeIndex(expiration_theoretical.date)
         expiration_actual, available_expiries = get_live_option_expiries(expiration_theoretical,
                                                                           self.trade_dates,
@@ -131,14 +74,14 @@ class OptionSimulation:
                                                                          '/UnderlyingOptionsEODCalcs_')
         return expiration_actual
 
-    def trade_sim(self, zscore, option_duration_months,
+    def trade_sim(self, zscore, option_duration_months, option_type='P',
                          trade_dates=None, trade_type='EOM'):
         '''Run option simulation'''
         print('Running Simulation:Zscore ' + str(zscore) +' Duration '
               + str(option_duration_months))
         # TODO Check load_data has run
-        self.trade_dates = self.__get_trade_dates(trade_dates,
-                                                  trade_type)
+        self.trade_dates = self._get_trade_dates(trade_dates,
+                                                 trade_type)
 
         try:
             trade_model_inputs = self.sim_param.loc[self.trade_dates]
@@ -146,16 +89,16 @@ class OptionSimulation:
             self.load_data()
             trade_model_inputs = self.sim_param.loc[self.trade_dates]
 
-        self.expiration_actual = self.__get_expiration_dates(option_duration_months)
+        self.expiration_actual = self._get_expiration_dates(option_duration_months)
 
-        zero_ylds = self.usZeroYldCurve.get_zero_4dates(as_of_dates=self.trade_dates,
+        zero_yields = self.usZeroYldCurve.get_zero_4dates(as_of_dates=self.trade_dates,
                                                         maturity_dates=self.expiration_actual,
                                                         date_adjust=True)
-        zero_ylds = zero_ylds.rename('zeros')
-        zero_ylds = pd.concat([zero_ylds,
-                               pd.Series(data=self.expiration_actual, index=zero_ylds.index,
-                                         name='expiration_date')], axis=1)
-        trade_model_inputs[zero_ylds.columns] = zero_ylds
+        zero_yields = zero_yields.rename('zeros')
+        zero_yields = pd.concat([zero_yields,
+                                 pd.Series(data=self.expiration_actual, index=zero_yields.index,
+                                           name='expiration_date')], axis=1)
+        trade_model_inputs[zero_yields.columns] = zero_yields
         spot_price = trade_model_inputs.loc[:, 'sp500_close'].values
         dividend_yield = trade_model_inputs.loc[:, 'Yield Value'].values / 100
         sigma = trade_model_inputs.loc[:, 'vix_index'].values / 100
@@ -196,7 +139,7 @@ class OptionSimulation:
                 dtf = feather.read_dataframe(str(self.feather_directory) +
                                              '/UnderlyingOptionsEODCalcs_' +
                                              dts.strftime(format='%Y-%m-%d')
-                                             + '_P' + '.feather')
+                                             + '_' + option_type + '.feather')
 
                 # First trade date find traded strike from available strikes based on
                 # theoretical strike
@@ -208,26 +151,13 @@ class OptionSimulation:
                     # Look for strike in available strikes
                     idx = (np.abs(available_strikes.values - strike_theo)).argmin()
                     strike_traded = available_strikes.iloc[idx]
-
-                #     while not available_strikes.isin([strike_theo]).any():
-                #         strike_theo = strike_theo - self.listing_spread
-                #
-                #     strike_traded = strike_theo
                 else:
                     option_trade_data = dtf[dtf['expiration'] == expiry_date]
 
                 days2exp = expiry_date - dts
                 zero_rate = self.usZeroYldCurve.get_zero_4dates(as_of_dates=dts,
-                                                              maturity_dates=expiry_date,
-                                                              date_adjust=True) / 100
-#                df_out.loc[dts]['zero'] = zero_rate.iloc[0]
-#                df_out.loc[dts]['strike_traded'] = strike_traded
-#                df_out.loc[dts]['days_2_exp'] = days2exp.days
-#                df_out.loc[dts]['strike_theo'] = strike_theo
-#                df_out.loc[dts]['bid_eod'] = option_trade_data[option_trade_data['strike'] ==
-#                                              strike_traded]['bid_eod'].iloc[0]
-#                df_out.loc[dts]['ask_eod'] = option_trade_data[option_trade_data['strike'] ==
-#                                              strike_traded]['ask_eod'].iloc[0]
+                                                                maturity_dates=expiry_date,
+                                                                date_adjust=True) / 100
 #                
                 df_out.loc[dts, 'zero'] = zero_rate.iloc[0]
                 df_out.loc[dts, 'strike_traded'] = strike_traded
@@ -250,7 +180,6 @@ class OptionSimulation:
         :param file_names:
         :return :
         """
-
         file_strings = [str(input_path / file_name) for file_name in file_names.values()]
         list_df = [read_feather(file_string) for file_string in file_strings]
         out_df = pd.concat(list_df, axis=1)
@@ -265,7 +194,7 @@ class OptionSimulation:
 
         return out_df
 
-    def sell_put(self, leverage, trade_mid=True):
+    def sell_option(self, leverage, trade_mid=True):
         assert not self.dtf_trades is None, 'No trades loaded - run trade_sim first'
         self.leverage = leverage
         for i, item in enumerate(self.dtf_trades):
@@ -277,16 +206,11 @@ class OptionSimulation:
             else:
                 # Option sold at bid and then valued @ ask
                 item['premium_sold'] = item['ask_eod']
-                item.loc[item.index[0], ('premium_sold')] = item.iloc[0]['bid_eod'].astype(float)
-            # Option bought at bid and then valued @ bid
-            #item['premium_bought'] = item['bid_eod'].astype(float)
-            #item.loc[item.index[0],('premium_bought')] = item.iloc[0]['ask_eod'].astype(float)
+                item.loc[item.index[0], 'premium_sold'] = item.iloc[0]['bid_eod'].astype(float)
+
             item['asset_capital'] = item['strike_traded'] * item['discount'] - item['premium_sold']
             item['equity_capital'] = item['asset_capital'] / self.leverage
             premium_diff = item[['premium_sold']].diff(axis=0) * -1
-            # Continous return
-            #nav = premium_diff.fillna(value=0).add(item.loc[:,'equity_capital'], axis=0)
-            #nav/nav.shift(1)
             item['return_arithmetic'] = premium_diff.divide(item['equity_capital'].shift(1),
                                                             axis=0).astype(np.float64)
             premium_diff.iloc[0] = item['equity_capital'].iloc[0]
