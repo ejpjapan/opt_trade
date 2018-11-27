@@ -21,10 +21,9 @@ class OptionSimulation:
     COL_NAMES = ['strike_traded', 'strike_theo', 'days_2_exp', 'zero', 'bid_eod', 'ask_eod']
     GREEK_COL_NAMES = ['delta_1545', 'gamma_1545', 'theta_1545', 'vega_1545', 'rho_1545', 'implied_volatility_1545']
 
-    def __init__(self, update_simulation_data=False, listing_spread=5):
+    def __init__(self, update_simulation_data=False):
         if update_simulation_data:
             updater = UpdateSP500Data()
-        self.listing_spread = listing_spread
         self.feather_directory = UpdateSP500Data.TOP_LEVEL_PATH / 'feather'
         self.usZeroYldCurve = USZeroYieldCurve()
         file_names = {'spot': 'sp500_close', 'sigma': 'vix_index', 'dividend_yield': 'sp500_dividend_yld'}

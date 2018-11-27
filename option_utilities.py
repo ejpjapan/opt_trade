@@ -93,7 +93,7 @@ def write_feather(dataframe: pd.DataFrame, source: str):
 
 
 def read_feather(source: str):
-    """ Wrapper function feather.read_dataframe adds row index as column and saves as feather"""
+    """ Wrapper function feather.read_dataframe adds date columns from index"""
     out_df = feather.read_dataframe(source)
     out_df = out_df.set_index(['index'])
     return out_df
@@ -135,11 +135,12 @@ class USZeroYieldCurve:
         fed_zero_feather = Path(self.db_path / 'fedzero.feather')
         if fed_zero_feather.is_file():
             # load old file
-            seconds_since_upate = time() - fed_zero_feather.stat().st_mtime
+            seconds_since_update = time() - fed_zero_feather.stat().st_mtime
             zero_yields_old = read_feather(str(fed_zero_feather))
             latest_business_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(1)
             if zero_yields_old.index[-1].date() != latest_business_date.date():
-                if seconds_since_upate > 86400:
+                # Check file was updated in last 8 hours
+                if seconds_since_update > (3600 * 8):
                     self.get_raw_zeros()
         else:
             self.get_raw_zeros()
