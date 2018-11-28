@@ -15,6 +15,11 @@ from time import time
 from pathlib import Path
 from option_utilities import get_live_option_expiries, USZeroYieldCurve, get_theoretical_strike, read_feather
 from spx_data_update import UpdateSP500Data, get_dates
+import pyfolio as pf
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import matplotlib.dates as mdates
+from matplotlib.ticker import FormatStrFormatter
 
 
 class OptionSimulation:
@@ -28,7 +33,6 @@ class OptionSimulation:
         self.usZeroYldCurve = USZeroYieldCurve()
         file_names = {'spot': 'sp500_close', 'sigma': 'vix_index', 'dividend_yield': 'sp500_dividend_yld'}
         self.sim_param = self.get_simulation_parameters(UpdateSP500Data.TOP_LEVEL_PATH, file_names)
-        self.dtf_trades = None
         self.trade_dates = None
         # Simulation dates depend depend on availability of zero rates
         last_zero_date = self.usZeroYldCurve.zero_yields.index[-1]
@@ -74,25 +78,22 @@ class OptionSimulation:
         return expiration_actual
 
     def trade_sim(self, zscore, option_duration_months, option_type='P',
-                         trade_dates=None, trade_type='EOM'):
+                  trade_dates=None, trade_type='EOM'):
         '''Run option simulation'''
         print('Running Simulation:Zscore ' + str(zscore) +' Duration '
               + str(option_duration_months))
-        # TODO Check load_data has run
+
         self.trade_dates = self._get_trade_dates(trade_dates,
                                                  trade_type)
 
-        try:
-            trade_model_inputs = self.sim_param.loc[self.trade_dates]
-        except:
-            self.load_data()
-            trade_model_inputs = self.sim_param.loc[self.trade_dates]
+        trade_model_inputs = self.sim_param.loc[self.trade_dates]
+
 
         self.expiration_actual = self._get_expiration_dates(option_duration_months)
 
         zero_yields = self.usZeroYldCurve.get_zero_4dates(as_of_dates=self.trade_dates,
-                                                        maturity_dates=self.expiration_actual,
-                                                        date_adjust=True)
+                                                          maturity_dates=self.expiration_actual,
+                                                          date_adjust=True)
         zero_yields = zero_yields.rename('zeros')
         zero_yields = pd.concat([zero_yields,
                                  pd.Series(data=self.expiration_actual, index=zero_yields.index,
@@ -109,26 +110,26 @@ class OptionSimulation:
         # self.trade_model_inputs = trade_model_inputs
         trade_model_inputs['strike_theoretical'] = np.transpose(option_strikes_theoretical)
 
-        self.sim_dates_live = pd.date_range(self.trade_dates[0], self.sim_dates_all[-1], freq='B')
-        self.sim_dates_live = self.sim_dates_live.intersection(self.sim_dates_all)
+        sim_dates_live = pd.date_range(self.trade_dates[0], self.sim_dates_all[-1], freq='B')
+        sim_dates_live = sim_dates_live.intersection(self.sim_dates_all)
 
         # Simulation date cannot go beyond last expiry
-        if self.sim_dates_live[-1] >= self.expiration_actual[-1]:
-            last_sim_date_idx = self.sim_dates_live.get_loc(self.expiration_actual[-1])
-            self.sim_dates_live = self.sim_dates_live[:last_sim_date_idx]
+        if sim_dates_live[-1] >= self.expiration_actual[-1]:
+            last_sim_date_idx = sim_dates_live.get_loc(self.expiration_actual[-1])
+            sim_dates_live = sim_dates_live[:last_sim_date_idx]
 
         dtf_trades = []
 
         for i, trade_dt in enumerate(self.trade_dates):
             # Get date slice between two trading dates
-            start_idx = self.sim_dates_live.get_loc(self.trade_dates[i])
+            start_idx = sim_dates_live.get_loc(self.trade_dates[i])
 
             if trade_dt == self.trade_dates[-1]:
                 # last date slice is to end of simulation period
-                date_slice = self.sim_dates_live[start_idx:]
+                date_slice = sim_dates_live[start_idx:]
             else:
-                end_idx = self.sim_dates_live.get_loc(self.trade_dates[i+1]) + 1
-                date_slice = self.sim_dates_live[start_idx:end_idx]
+                end_idx = sim_dates_live.get_loc(self.trade_dates[i+1]) + 1
+                date_slice = sim_dates_live[start_idx:end_idx]
             # Create empty data frame
             df_out = pd.DataFrame(np.nan, index=date_slice, columns=self.COL_NAMES
                                   + self.GREEK_COL_NAMES)
@@ -157,7 +158,7 @@ class OptionSimulation:
                 zero_rate = self.usZeroYldCurve.get_zero_4dates(as_of_dates=dts,
                                                                 maturity_dates=expiry_date,
                                                                 date_adjust=True) / 100
-#                
+
                 df_out.loc[dts, 'zero'] = zero_rate.iloc[0]
                 df_out.loc[dts, 'strike_traded'] = strike_traded
                 df_out.loc[dts, 'days_2_exp'] = days2exp.days
@@ -170,7 +171,7 @@ class OptionSimulation:
                 df_out.loc[dts, self.GREEK_COL_NAMES] = option_trade_data[option_trade_data['strike'] ==
                                               strike_traded][self.GREEK_COL_NAMES].iloc[0]
             dtf_trades.append(df_out)
-        self.dtf_trades = dtf_trades
+        return dtf_trades, zscore, sim_dates_live
 
     @staticmethod
     def get_simulation_parameters(input_path, file_names):
@@ -193,15 +194,26 @@ class OptionSimulation:
 
         return out_df
 
-    def sell_option(self, leverage, trade_mid=True):
-        assert not self.dtf_trades is None, 'No trades loaded - run trade_sim first'
-        self.leverage = leverage
+
+class OptionTrades:
+    def __init__(self, dtf_trades: tuple, leverage: float):
+        self.dtf_trades = dtf_trades[0]
+        self.zscore = dtf_trades[1]
+        self.sim_dates_live = dtf_trades[2]
+
+        if np.isscalar(leverage):
+            self.leverage = pd.Series(leverage, self.sim_dates_live)
+        else:
+            self.leverage = leverage
+        self.returns = self.sell_option()
+
+    def sell_option(self, trade_mid=True):
         for i, item in enumerate(self.dtf_trades):
             item['discount'] = item['days_2_exp'] / 365 * - item['zero']
             item['discount'] = item['discount'].map(np.exp)
             if trade_mid:
                 item['premium_sold'] = pd.concat([item['ask_eod'],
-                                         item['bid_eod']], axis=1).mean(axis=1)
+                                                  item['bid_eod']], axis=1).mean(axis=1)
             else:
                 # Option sold at bid and then valued @ ask
                 item['premium_sold'] = item['ask_eod']
@@ -228,28 +240,82 @@ class OptionSimulation:
 
     def get_greeks(self):
         '''Get trade simlution greeks'''
-        assert not self.dtf_trades is None, 'No trades loaded - run trade_sim first'
         greeks_list = []
         for item in self.dtf_trades:
             # Greeks are 1 to n-1
-            greeks_list.append(item[self.GREEK_COL_NAMES].iloc[:-1].astype(np.float64))
-        return  pd.concat(greeks_list)
-    
+            greeks_list.append(item[OptionSimulation.GREEK_COL_NAMES].iloc[:-1].astype(np.float64))
+        # Need to add greeks for last day of simulation
+        greeks_list[-1] = item[OptionSimulation.GREEK_COL_NAMES].astype(np.float64)
+
+        greeks = pd.concat(greeks_list)
+        # delta, gamma, theta, vega, rho need to be multiplied by -1 * leverage
+        greek_col_bool = sum([greeks.columns.str.contains(item)
+                              for item in ['delta', 'gamma', 'theta', 'vega', 'rho']]) > 0
+        greek_columns = greeks.loc[:, greek_col_bool]
+        greek_columns = greek_columns.multiply(-1 * self.leverage, axis=0)
+        greeks.loc[:, greek_col_bool] = greek_columns
+        return greeks
+
     def get_strikes(self):
-        '''Get trade simlution strikes'''
-        assert not self.dtf_trades is None, 'No trades loaded - run trade_sim first'
+        '''Get trade simulation strikes'''
         strike_list = []
         for item in self.dtf_trades:
-            # Greeks are 1 to n-1
             strike_list.append(item['strike_traded'].iloc[:-1].astype(np.float64))
-        return  pd.concat(strike_list)    
-    
-    @property
+        return pd.concat(strike_list)
+
     def get_days_2_expiry(self):
         '''Get trade days 2 expiry'''
-        assert not self.dtf_trades is None, 'No trades loaded - run trade_sim first'
         days_list = []
         for item in self.dtf_trades:
             # Greeks are 1 to n-1
             days_list.append(item['days_2_exp'].iloc[:-1].astype(np.float64))
         return pd.concat(days_list)
+
+    def performance(self):
+        performance = pf.timeseries.perf_stats(self.returns[1])
+        performance['Leverage'] = self.leverage.mean()
+        performance['ZScore'] = self.zscore
+
+        return performance
+
+    @staticmethod
+    def plot_performance_quad(returns, fig_path=None, font_size=20):
+
+        fig = plt.figure(figsize=(20, 10))
+        gs = gridspec.GridSpec(2, 2, wspace=0.5, hspace=0.5)
+        ax_heatmap = plt.subplot(gs[0, 0])
+        ax_monthly = plt.subplot(gs[0, 1])
+        ax_box_plot = plt.subplot(gs[1, 0])
+        ax_yearly = plt.subplot(gs[1, 1])
+
+        #   Chart 1: Heatmap
+        pf.plotting.plot_monthly_returns_heatmap(returns, ax=ax_heatmap)
+        ax_heatmap.set_xticklabels(np.arange(0.5, 12.5, step=1))
+        ax_heatmap.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
+
+        #   Chart 2: Monthly return distribution
+        pf.plotting.plot_monthly_returns_dist(returns, ax=ax_monthly)
+        ax_monthly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
+        leg1 = ax_monthly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
+        for text in leg1.get_texts():
+            # text.set_color('white')
+            text.set_label('mean')
+
+        #   Chart 3: Return quantiles
+        pf.plotting.plot_return_quantiles(returns, ax=ax_box_plot)
+
+        #   Chart 4: Annual returns
+        pf.plotting.plot_annual_returns(returns, ax=ax_yearly)
+        _ = ax_yearly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
+        ax_yearly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
+
+        for ax in [ax_box_plot, ax_heatmap, ax_monthly, ax_yearly]:
+            for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+                         ax.get_xticklabels() + ax.get_yticklabels()):
+                item.set_fontsize(font_size)
+
+        for items in (ax_yearly.get_yticklabels() + ax_heatmap.get_yticklabels()):
+            items.set_fontsize(font_size - 5)
+        if fig_path.is_dir():
+            plt.savefig(fig_path + 'heat_map', dpi=600, bbox_inches='tight', transparent=True)
+        return fig
