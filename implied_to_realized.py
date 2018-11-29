@@ -88,10 +88,14 @@ class VolatilityYZ(Volatility):
         # else:
         return result
 
+########################################
 
-
-
+from option_utilities import read_feather, write_feather
+from spx_data_update import UpdateSP500Data
+import pandas as pd
+import numpy as np
 from ib_insync import *
+import feather
 # util.startLoop()
 
 ib = IB()
@@ -103,19 +107,27 @@ contract = Index('SPX', 'CBOE', 'USD')
 bars = ib.reqHistoricalData(
         contract,
         endDateTime='',
-        durationStr='2 Y',
+        durationStr='4 Y',
         barSizeSetting='5 mins',
         whatToShow='TRADES',
         useRTH=True,
         formatDate=1)
 
-
+ib.disconnect()
 df = util.df(bars)
+# feather.write_dataframe(df, UpdateSP500Data.DATA_BASE_PATH / 'sp5_bars')
 
 df = df.set_index('date')
-squared_ret = (df['close'].pct_change().dropna())**2
+squared_diff = (np.log(df['close'] / df['close'].shift(1)))**2
+rv = squared_diff.rolling(78*22).sum()
+annualizedVol =np.sqrt(rv*12) * 100
+rv_month_end = annualizedVol.resample('BM').bfill().dropna()
 
+vrp_data = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
+                       usecols=['VRP', 'EVRP', 'IV','RV','ERV'])
+vrp_data = vrp_data.set_index(pd.date_range('31-jan-1990', '31-dec-2017',freq='BM'))
 
+################################################################
 from spx_data_update import UpdateSP500Data
 import pandas_datareader.data as web
 from implied_to_realized import VolatilityYZ, VolatilitySD
