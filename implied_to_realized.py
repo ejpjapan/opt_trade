@@ -90,32 +90,35 @@ class VolatilityYZ(Volatility):
 
 ########################################
 
-from option_utilities import read_feather, write_feather
+# from option_utilities import read_feather, write_feather
 from spx_data_update import UpdateSP500Data
 import pandas as pd
 import numpy as np
-from ib_insync import *
 import feather
-# util.startLoop()
-
-ib = IB()
-ib.connect('127.0.0.1', port=4001, clientId=40)
-
-contract = Index('SPX', 'CBOE', 'USD')
+import quandl
 
 
-bars = ib.reqHistoricalData(
-        contract,
-        endDateTime='',
-        durationStr='4 Y',
-        barSizeSetting='5 mins',
-        whatToShow='TRADES',
-        useRTH=True,
-        formatDate=1)
-
-ib.disconnect()
-df = util.df(bars)
+# from ib_insync import *
+# ib = IB()
+# ib.connect('127.0.0.1', port=4001, clientId=40)
+#
+# contract = Index('SPX', 'CBOE', 'USD')
+#
+#
+# bars = ib.reqHistoricalData(
+#         contract,
+#         endDateTime='',
+#         durationStr='4 Y',
+#         barSizeSetting='5 mins',
+#         whatToShow='TRADES',
+#         useRTH=True,
+#         formatDate=1)
+#
+# ib.disconnect()
+# df = util.df(bars)
 # feather.write_dataframe(df, UpdateSP500Data.DATA_BASE_PATH / 'sp5_bars')
+
+df = feather.read_dataframe(UpdateSP500Data.DATA_BASE_PATH / 'sp5_bars')
 
 df = df.set_index('date')
 squared_diff = (np.log(df['close'] / df['close'].shift(1)))**2
@@ -124,17 +127,38 @@ annualizedVol =np.sqrt(rv*12) * 100
 rv_month_end = annualizedVol.resample('BM').bfill().dropna()
 
 vrp_data = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
-                       usecols=['VRP', 'EVRP', 'IV','RV','ERV'])
+                       usecols=['VRP', 'EVRP', 'IV', 'RV', 'ERV'])
 vrp_data = vrp_data.set_index(pd.date_range('31-jan-1990', '31-dec-2017',freq='BM'))
+
+compare_data = pd.concat([vrp_data['RV'].reindex(rv_month_end.index), rv_month_end], axis=1).dropna(how='any').corr()
+
+from option_simulation import OptionSimulation, OptionTrades
+from time import time
+import pandas_datareader.data as web
+import pyfolio as pf
+
+before = time()
+optsim = OptionSimulation(update_simulation_data=False)
+
+dtfs = optsim.trade_sim(-1, 1, trade_type='EOM', option_type='P')
+
+# variable_leverage = pd.Series(np.linspace(1,2,len(dtfs[2])), index=dtfs[2])
+opt_trade = OptionTrades(dtfs, 2)
+opt_idx =pf.timeseries.cum_returns(opt_trade.returns[1],100)
+
+opt_idx_ret = opt_idx.resample('BM').bfill().pct_change()
+
+
+[sp500, vix] = [web.get_data_yahoo(item, 'JAN-01-90') for item in ['^GSPC', '^VIX']]
+sp_monthly_ret = sp500['Adj Close'].resample('BM').bfill().dropna().pct_change().dropna()
 
 ################################################################
 from spx_data_update import UpdateSP500Data
 import pandas_datareader.data as web
-from implied_to_realized import VolatilityYZ, VolatilitySD
+# from implied_to_realized import VolatilityYZ, VolatilitySD
 import pandas as pd
 import pyfolio as pf
 import statsmodels.formula.api as sm
-import quandl
 import numpy as np
 
 [sp500, vix] = [web.get_data_yahoo(item, 'JAN-01-90') for item in ['^GSPC', '^VIX']]
