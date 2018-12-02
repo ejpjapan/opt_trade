@@ -23,7 +23,7 @@ from matplotlib.ticker import FormatStrFormatter
 
 
 class OptionSimulation:
-    COL_NAMES = ['strike_traded', 'strike_theo', 'days_2_exp', 'zero', 'bid_eod', 'ask_eod']
+    COL_NAMES = ['strike_traded', 'strike_theo', 'days_2_exp', 'zero', 'bid_1545', 'ask_1545']
     GREEK_COL_NAMES = ['delta_1545', 'gamma_1545', 'theta_1545', 'vega_1545', 'rho_1545', 'implied_volatility_1545']
 
     def __init__(self, update_simulation_data=False):
@@ -163,10 +163,10 @@ class OptionSimulation:
                 df_out.loc[dts, 'strike_traded'] = strike_traded
                 df_out.loc[dts, 'days_2_exp'] = days2exp.days
                 df_out.loc[dts, 'strike_theo'] = strike_theo
-                df_out.loc[dts, 'bid_eod'] = option_trade_data[option_trade_data['strike'] ==
-                                              strike_traded]['bid_eod'].iloc[0]
-                df_out.loc[dts, 'ask_eod'] = option_trade_data[option_trade_data['strike'] ==
-                                              strike_traded]['ask_eod'].iloc[0]
+                df_out.loc[dts, 'bid_1545'] = option_trade_data[option_trade_data['strike'] ==
+                                              strike_traded]['bid_1545'].iloc[0]
+                df_out.loc[dts, 'ask_1545'] = option_trade_data[option_trade_data['strike'] ==
+                                              strike_traded]['ask_1545'].iloc[0]
 
                 df_out.loc[dts, self.GREEK_COL_NAMES] = option_trade_data[option_trade_data['strike'] ==
                                               strike_traded][self.GREEK_COL_NAMES].iloc[0]
@@ -212,12 +212,12 @@ class OptionTrades:
             item['discount'] = item['days_2_exp'] / 365 * - item['zero']
             item['discount'] = item['discount'].map(np.exp)
             if trade_mid:
-                item['premium_sold'] = pd.concat([item['ask_eod'],
-                                                  item['bid_eod']], axis=1).mean(axis=1)
+                item['premium_sold'] = pd.concat([item['ask_1545'],
+                                                  item['bid_1545']], axis=1).mean(axis=1)
             else:
                 # Option sold at bid and then valued @ ask
-                item['premium_sold'] = item['ask_eod']
-                item.loc[item.index[0], 'premium_sold'] = item.iloc[0]['bid_eod'].astype(float)
+                item['premium_sold'] = item['ask_1545']
+                item.loc[item.index[0], 'premium_sold'] = item.iloc[0]['bid_1545'].astype(float)
 
             item['asset_capital'] = item['strike_traded'] * item['discount'] - item['premium_sold']
             item['equity_capital'] = item['asset_capital'] / self.leverage
