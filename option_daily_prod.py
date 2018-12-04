@@ -60,7 +60,7 @@ class OptionAsset(ABC):
         return expirations.sort_index()
 
     @abstractmethod
-    def get_sigma_qc(self, vol_symbol, ib, exhange):
+    def get_sigma_qc(self, vol_symbol, ib, exchange):
         """Abstract method"""
         # should return empty string if no pre-calculated vol index exists
         pass
@@ -93,7 +93,7 @@ class SpxOptionAsset(OptionAsset):
         """Gets latest dividend yield"""
         # TO DO: Add check on date of latest dividend yield
         dividend_yield_history = DividendYieldHistory()
-        dividend_yield = dividend_yield_history.dy_monthly[-1] / 100
+        dividend_yield = dividend_yield_history.dy_monthly[dividend_yield_history.dy_monthly.columns[0]][-1] / 100
         return dividend_yield
 
 
@@ -117,8 +117,8 @@ class RSL2OptionAsset(OptionAsset):
         """Gets latest dividend yield"""
         # TO DO: Add check on date of latest dividend yield
         # TO DO: Change to RSL2 dividend yield
-        dividend_yield_history = DividendYieldHistory()
-        dividend_yield = dividend_yield_history.dy_monthly[-1] / 100
+        # dividend_yield_history = DividendYieldHistory()
+        # dividend_yield = dividend_yield_history.dy_monthly[-1] / 100
         print('Warning: RSL2 Using Fixed Dividend yield')
         dividend_yield = 0.0134
 

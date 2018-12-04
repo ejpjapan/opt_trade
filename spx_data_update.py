@@ -179,8 +179,8 @@ class DividendYieldHistory:
         self.dy_monthly = get_sp5_dividend_yield()
 
     def save_dividend_yield_df(self, out_directory: Path, file_name='sp500_dividend_yld'):
-        dividend_yield_df = self.dy_monthly.to_frame()
-        write_feather(dividend_yield_df, str(out_directory / file_name))
+        # dividend_yield_df = self.dy_monthly.to_frame()
+        write_feather(self.dy_monthly, str(out_directory / file_name))
 
 
 class ClosingPriceHistory:
@@ -236,13 +236,15 @@ def get_sp5_dividend_yield():
     """Fetch dividend yield from Quandl'''
     :return: Dataframe
     """
-    try:
-        spx_dividend_yld = quandl.get('MULTPL/SP500_DIV_YIELD_MONTH', collapse='monthly')
-        spx_dividend_yld = spx_dividend_yld.resample('MS').bfill()
-    except quandl.errors.quandl_error.NotFoundError:
-        print('Quandl failed - Scraping dividend yield from Mutlp.com')
-    else:
-        spx_dividend_yld = scrape_sp5_div_yield()
+    quandl.ApiConfig.api_key = quandle_api()
+    # try:
+    spx_dividend_yld = quandl.get('MULTPL/SP500_DIV_YIELD_MONTH', collapse='monthly')
+    spx_dividend_yld = spx_dividend_yld.resample('MS').bfill()
+    # except:
+    #     print('Quandl failed - Scraping dividend yield from Mutlp.com')
+    # else:
+    #     print('Quandl failed - Scraping dividend yield from Mutlp.com')
+    #     spx_dividend_yld = scrape_sp5_div_yield()
     return spx_dividend_yld
 
 
@@ -274,3 +276,12 @@ def data_shop_login():
     f = open(str(file_name), 'rb')
     pl = plistlib.load(f)
     return pl['cbeoDataShop_dict']
+
+
+def quandle_api():
+    """Get Quandl API key"""
+    file_name = UpdateSP500Data.DATA_BASE_PATH / 'config.plist'
+    assert(file_name.is_file())
+    f = open(str(file_name), 'rb')
+    pl = plistlib.load(f)
+    return pl['Quandl']
