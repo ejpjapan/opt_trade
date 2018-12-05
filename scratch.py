@@ -1,104 +1,89 @@
-from spx_data_update import UpdateSP500Data
-import pandas_datareader.data as web
-from implied_to_realized import VolatilityYZ, VolatilitySD
-import pandas as pd
+from option_utilities import read_feather, write_feather
+from spx_data_update import UpdateSP500Data, quandle_api
+import numpy as np
+from arch import arch_model
 import pyfolio as pf
 import statsmodels.formula.api as sm
+import pandas_datareader.data as web
+import pandas as pd
 import quandl
-import numpy as np
+import datetime
+from ib_insync import *
+
+
+
+ib = IB()
+ib.connect('127.0.0.1', port=4001, clientId=40)
+
+contract = Index('SPX', 'CBOE', 'USD')
+
+end = datetime.datetime(2006, 12, 6, 9, 30)
+
+bars = ib.reqHistoricalData(
+        contract,
+        endDateTime='',
+        durationStr='1 M',
+        barSizeSetting='5 mins',
+        whatToShow='TRADES',
+        useRTH=True,
+        formatDate=1)
+
+ib.disconnect()
+df = util.df(bars)
+df = df.set_index('date')
+file_name = 'sp500_5min_bars'
+
+df_hist = read_feather(UpdateSP500Data.DATA_BASE_PATH / file_name)
+full_hist = pd.concat([df_hist, df], axis=0)
+write_feather(full_hist, UpdateSP500Data.DATA_BASE_PATH / file_name)
+
+squared_diff = (np.log(full_hist['close'] / full_hist['close'].shift(1)))**2
+
+realized_quadratic_variation = squared_diff.resample('B').sum()
+# annualizedVol =np.sqrt(rv*12) * 100
+#
+#
+# realized_quadratic_variation = squared_diff.resample('B').sum()
+# remove zero return days
+realized_quadratic_variation = realized_quadratic_variation[realized_quadratic_variation != 0]
+
+realized_volatility = np.sqrt(realized_quadratic_variation * 252)
+
+series_list = []
+for i in range(500, len(realized_volatility) + 1):
+    am = arch_model(realized_volatility[i-500:i], mean='HAR', lags=[1, 5, 22],  vol='Constant')
+    res = am.fit()
+    forecasts = res.forecast(horizon=50)
+    np_vol = forecasts.mean.iloc[-1] * np.sqrt(252)
+    series_list.append(np_vol)
+
+e_vol = pd.concat(series_list, axis=1)
+e_vol = e_vol.transpose()
+mask = e_vol > 1
+e_vol[mask] = 1
+
 
 [sp500, vix] = [web.get_data_yahoo(item, 'JAN-01-90') for item in ['^GSPC', '^VIX']]
 
-
-sp_monthly_ret  = sp500['Adj Close'].resample('BM').bfill().dropna().pct_change().dropna()
+sp_monthly_ret = sp500['Adj Close'].resample('BM').bfill().dropna().pct_change().dropna()
 # sp_monthly_ret  = np.log(sp500['Adj Close'].resample('BM').bfill().dropna() / sp500['Adj Close'].resample('BM').bfill().dropna().shift(1))
 sp_monthly_ret = sp_monthly_ret.rename('sp5_ret')
 
-
 vrp_data = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
-                       usecols=['VRP', 'EVRP', 'IV','RV','ERV'])
+                       usecols=['VRP', 'EVRP', 'IV', 'RV', 'ERV'])
+vrp_data = vrp_data.set_index(pd.date_range('31-jan-1990', '31-dec-2017', freq='BM'))
 
-vrp_data = vrp_data.set_index(pd.date_range('31-jan-1990', '31-dec-2017',freq='BM'))
+
+# realized_quadratic_variation_22 = realized_quadratic_variation.rolling(22).sum()
+rv_calc = realized_volatility.resample('BM').bfill().dropna()
+rv_calc = rv_calc.rename('rv_calc')
+
+quandl.ApiConfig.api_key = quandle_api()
 cape = quandl.get('MULTPL/SHILLER_PE_RATIO_MONTH', collapse='monthly')
-regression_data = pd.concat([sp_monthly_ret, vrp_data.shift(1) / 100, cape.apply(np.log).shift(1).resample('BM').bfill()], axis=1)
+
+regression_data = pd.concat([sp_monthly_ret, vrp_data.shift(1) / 100, rv_calc.shift(1), cape.apply(np.log).shift(1).resample('BM').bfill()], axis=1)
 regression_data = regression_data.dropna(axis=0, how='any')
 
-
-annual_returns_dict = {}
-for col_name in ['sp5_ret']:
-    annual_returns_dict[col_name] = pf.timeseries.annual_return(regression_data[col_name], period='monthly')
-
-regression_string = 'sp5_ret ~ VRP + RV + Value'
-#
+regression_string = 'sp5_ret ~ rv_calc'
 results = sm.ols(formula=regression_string, data=regression_data).fit()
-
 results.summary()
-
-
-
-# vol_yz= VolatilityYZ(22, 10, sp500)
-# vol_sd= VolatilitySD(22, 10, sp500)
-#
-# vol_rf = (vix['Close']/100 - vol_sd.compute())
-# vol_rf.plot()
-# vol_rf_yz = (vix['Close']/100 - vol_yz.compute())
-# vol_rf_yz.mean()
-
-
-
-from option_simulation import OptionSimulation, OptionTrades
-from time import time
-before = time()
-optsim = OptionSimulation(update_simulation_data=False)
-
-dtfs = optsim.trade_sim(-1, 1, trade_type='EOM', option_type='P')
-
-variable_leverage = pd.Series(np.linspace(1,2,len(dtfs[2])), index=dtfs[2])
-opt_trade = OptionTrades(dtfs, 2)
-
-opt_sim_index = pf.timeseries.cum_returns(opt_trade.returns[1], starting_value=100)
-
-opt_sim_index = opt_sim_index.resample('BM').bfill().dropna().pct_change().dropna()
-opt_sim_index = opt_sim_index.rename('options')
-
-
-regression_data_2 = pd.concat([regression_data, opt_sim_index], axis=1)
-regression_data_2 = regression_data_2.dropna(axis=0, how='any')
-
-
-regression_string = 'options ~ ERV'
-#
-results = sm.ols(formula=regression_string, data=regression_data_2).fit()
-
-results.summary()
-
-# print('elapsed: ', after - before )
-#
-
-
-
-# optsim.trade_sim(1, 1, trade_type='THU3', option_type='C')
-# rets_c = optsim.sell_option(2)
-#
-#
-# total = rets_p[1] + rets_c[1]
-# pf.plot_monthly_returns_heatmap(total)
-# pf.timeseries.annual_return(total)
-# pf.timeseries.annual_return(rets_c[1])
-
-# from spx_data_update import UpdateSP500Data, get_dates
-# from option_utilities import read_feather
-# import pandas as pd
-# import feather
-#
-#
-# file_names ={'spot': 'sp500_close', 'sigma': 'vix_index', 'dividend_yield': 'sp500_dividend_yld'}
-# input_path = UpdateSP500Data.TOP_LEVEL_PATH
-#
-# file_strings = [str(input_path / file_name) for file_name in file_names.values()]
-#
-#
-#
-# seconds_since_upate = time() - os.path.getmtime(fed_zero_feather)
-pf.timeseries.perf_stats()
-pf.utils.get_symbol_from_yahoo
