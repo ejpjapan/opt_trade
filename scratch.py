@@ -1,7 +1,7 @@
 from option_utilities import read_feather, write_feather
 from spx_data_update import UpdateSP500Data, quandle_api
 import numpy as np
-from arch import arch_model
+# from arch import arch_model
 import pyfolio as pf
 import statsmodels.formula.api as sm
 import pandas_datareader.data as web
@@ -10,36 +10,41 @@ import quandl
 import datetime
 from ib_insync import *
 
-
-
-ib = IB()
-ib.connect('127.0.0.1', port=4001, clientId=40)
-
-contract = Index('SPX', 'CBOE', 'USD')
-
-end = datetime.datetime(2006, 12, 6, 9, 30)
-
-bars = ib.reqHistoricalData(
-        contract,
-        endDateTime='',
-        durationStr='1 M',
-        barSizeSetting='5 mins',
-        whatToShow='TRADES',
-        useRTH=True,
-        formatDate=1)
-
-ib.disconnect()
-df = util.df(bars)
-df = df.set_index('date')
+# Get history
 file_name = 'sp500_5min_bars'
-
 df_hist = read_feather(UpdateSP500Data.DATA_BASE_PATH / file_name)
-full_hist = pd.concat([df_hist, df], axis=0)
-write_feather(full_hist, UpdateSP500Data.DATA_BASE_PATH / file_name)
+update_bars = True
+# Download latest
+if update_bars:
+    ib = IB()
+    ib.connect('127.0.0.1', port=4001, clientId=40)
+
+    contract = Index('SPX', 'CBOE', 'USD')
+
+    end = datetime.datetime(2006, 12, 6, 9, 30)
+
+    bars = ib.reqHistoricalData(
+            contract,
+            endDateTime='',
+            durationStr='1 M',
+            barSizeSetting='5 mins',
+            whatToShow='TRADES',
+            useRTH=True,
+            formatDate=1)
+
+    ib.disconnect()
+    df = util.df(bars)
+    df = df.set_index('date')
+    full_hist = pd.concat([df_hist, df], axis=0, sort=True)
+    full_hist = full_hist.drop_duplicates()
+    write_feather(full_hist.drop_duplicates(), UpdateSP500Data.DATA_BASE_PATH / file_name)
+else:
+    full_hist = df_hist.copy()
 
 squared_diff = (np.log(full_hist['close'] / full_hist['close'].shift(1)))**2
 
-realized_quadratic_variation = squared_diff.resample('B').sum()
+realized_quadratic_variation = squared_diff.rolling(1716).sum().dropna()
+
 # annualizedVol =np.sqrt(rv*12) * 100
 #
 #
