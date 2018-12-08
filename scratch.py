@@ -9,6 +9,10 @@ import pandas as pd
 import quandl
 import datetime
 from ib_insync import *
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.ticker import FormatStrFormatter
+
 
 # Get history
 file_name = 'sp500_5min_bars'
@@ -35,20 +39,16 @@ if update_bars:
     ib.disconnect()
     df = util.df(bars)
     df = df.set_index('date')
-    full_hist = pd.concat([df_hist, df], axis=0, sort=True)
-    # remove duplicates based on duplicate index not values
-    full_hist = full_hist[~(full_hist.index.duplicated())]
+    full_hist = df.combine_first(df_hist)
     write_feather(full_hist, UpdateSP500Data.DATA_BASE_PATH / file_name)
 else:
     full_hist = df_hist.copy()
 
-# log_price = np.log(full_hist['close'])
-# squared_diff = log_price.diff()**2
 
 squared_diff = (np.log(full_hist['close'] / full_hist['close'].shift(1)))**2
 
-realized_quadratic_variation = squared_diff.rolling(1716).sum().dropna()
-RV_calc = realized_quadratic_variation.resample('BM').bfill() * 10000
+realized_quadratic_variation = squared_diff.rolling(1716).sum().dropna() * 10000
+RV_calc = realized_quadratic_variation.resample('BM').bfill()
 RV_calc = RV_calc.rename('RV_calc')
 vrp_data = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
                        usecols=['VRP', 'EVRP', 'IV', 'RV', 'ERV'])
@@ -56,12 +56,14 @@ vrp_data = vrp_data.set_index(pd.date_range('31-jan-1990', '31-dec-2017', freq='
 
 [sp500, vix] = [web.get_data_yahoo(item, 'JAN-01-90') for item in ['^GSPC', '^VIX']]
 sp_monthly_ret = sp500['Adj Close'].resample('BM').bfill().dropna().pct_change().dropna()
-sp_monthly_ret = sp_monthly_ret.rename('sp5_ret')
+
+sp_quarterly_ret = sp500['Adj Close'].resample('BQ').bfill().dropna().pct_change().dropna()
+[sp_monthly_ret, sp_quarterly_ret] = [df.rename('sp5_ret') for df in [sp_monthly_ret, sp_quarterly_ret]]
 
 quandl.ApiConfig.api_key = quandle_api()
 cape = quandl.get('MULTPL/SHILLER_PE_RATIO_MONTH', collapse='monthly')
 
-cape = cape['Value'].rename('cape')
+cape = np.log(cape['Value'].rename('cape'))
 
 IV_calc = vix['Close']**2/12
 IV_calc = IV_calc.rename('IV_calc')
@@ -69,24 +71,30 @@ IV_calc = IV_calc.resample('BM').bfill()
 VRP_calc = IV_calc - RV_calc
 VRP_calc = VRP_calc.rename('VRP_calc')
 
+VRP_combo = VRP_calc.combine_first(vrp_data['VRP'])
+VRP_combo = VRP_combo.rename('VRP_combo')
 
-joint = vrp_data['VRP'].combine_first(VRP_calc)
-
-
-# regression_data = pd.concat([sp_monthly_ret, vrp_data.shift(1) / 100, VRP_calc.shift(1),
-#                              cape.apply(np.log).shift(1).resample('BM').bfill()], axis=1)
-
-
-regression_data = pd.concat([sp_monthly_ret, joint.shift(1),
-                             cape.apply(np.log).shift(1).resample('BM').bfill()], axis=1)
-
+regression_data = pd.concat([sp_monthly_ret, VRP_combo.shift(1), vrp_data['VRP'].shift(1),
+                             cape.shift(1).resample('BM').bfill()], axis=1)
 
 regression_data = regression_data.dropna(axis=0, how='any')
 
-regression_string = 'sp5_ret ~ VRP + cape'
+regression_string = 'sp5_ret ~ VRP_combo'
 results = sm.ols(formula=regression_string, data=regression_data).fit()
 results.summary()
+sns.lmplot(x='VRP_combo', y='sp5_ret', data=regression_data , height=10, aspect=2)
 
+[VRP_combo_q, vrp_data_q, cape_q] = [df.resample('BQ').bfill() for df in [VRP_combo, vrp_data, cape]]
+
+
+regression_data_quarterly = pd.concat([sp_quarterly_ret, VRP_combo_q.shift(1), cape_q.shift(1)],
+                                      axis=1)
+regression_data_quarterly = regression_data_quarterly.dropna(axis=0, how='any')
+
+regression_string = 'sp5_ret ~ VRP_combo'
+results = sm.ols(formula=regression_string, data=regression_data_quarterly).fit()
+results.summary()
+sns.lmplot(x='VRP_combo', y='sp5_ret', data=regression_data_quarterly, height=10, aspect=2)
 
 
 
@@ -104,26 +112,26 @@ results.summary()
 # e_vol[mask] = 1
 
 
-[sp500, vix] = [web.get_data_yahoo(item, 'JAN-01-90') for item in ['^GSPC', '^VIX']]
-
-sp_monthly_ret = sp500['Adj Close'].resample('BM').bfill().dropna().pct_change().dropna()
-# sp_monthly_ret  = np.log(sp500['Adj Close'].resample('BM').bfill().dropna() / sp500['Adj Close'].resample('BM').bfill().dropna().shift(1))
-
-vrp_data = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
-                       usecols=['VRP', 'EVRP', 'IV', 'RV', 'ERV'])
-vrp_data = vrp_data.set_index(pd.date_range('31-jan-1990', '31-dec-2017', freq='BM'))
+# [sp500, vix] = [web.get_data_yahoo(item, 'JAN-01-90') for item in ['^GSPC', '^VIX']]
+#
+# sp_monthly_ret = sp500['Adj Close'].resample('BM').bfill().dropna().pct_change().dropna()
+# # sp_monthly_ret  = np.log(sp500['Adj Close'].resample('BM').bfill().dropna() / sp500['Adj Close'].resample('BM').bfill().dropna().shift(1))
+#
+# vrp_data = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
+#                        usecols=['VRP', 'EVRP', 'IV', 'RV', 'ERV'])
+# vrp_data = vrp_data.set_index(pd.date_range('31-jan-1990', '31-dec-2017', freq='BM'))
 
 
 # realized_quadratic_variation_22 = realized_quadratic_variation.rolling(22).sum()
-rv_calc = realized_volatility.resample('BM').bfill().dropna()
-rv_calc = rv_calc.rename('rv_calc')
-
-quandl.ApiConfig.api_key = quandle_api()
-cape = quandl.get('MULTPL/SHILLER_PE_RATIO_MONTH', collapse='monthly')
-
-regression_data = pd.concat([sp_monthly_ret, vrp_data.shift(1) / 100, rv_calc.shift(1), cape.apply(np.log).shift(1).resample('BM').bfill()], axis=1)
-regression_data = regression_data.dropna(axis=0, how='any')
-
-regression_string = 'sp5_ret ~ rv_calc'
-results = sm.ols(formula=regression_string, data=regression_data).fit()
-results.summary()
+# rv_calc = realized_volatility.resample('BM').bfill().dropna()
+# rv_calc = rv_calc.rename('rv_calc')
+#
+# quandl.ApiConfig.api_key = quandle_api()
+# cape = quandl.get('MULTPL/SHILLER_PE_RATIO_MONTH', collapse='monthly')
+#
+# regression_data = pd.concat([sp_monthly_ret, vrp_data.shift(1) / 100, rv_calc.shift(1), cape.apply(np.log).shift(1).resample('BM').bfill()], axis=1)
+# regression_data = regression_data.dropna(axis=0, how='any')
+#
+# regression_string = 'sp5_ret ~ rv_calc'
+# results = sm.ols(formula=regression_string, data=regression_data).fit()
+# results.summary()
