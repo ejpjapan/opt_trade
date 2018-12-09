@@ -285,3 +285,11 @@ def quandle_api():
     f = open(str(file_name), 'rb')
     pl = plistlib.load(f)
     return pl['Quandl']
+
+
+def main():
+    _ = UpdateSP500Data()
+
+
+if __name__ == '__main__':
+    main()
