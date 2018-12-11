@@ -1,7 +1,7 @@
 from option_utilities import read_feather, write_feather
 from spx_data_update import UpdateSP500Data, quandle_api
 import numpy as np
-# from arch import arch_model
+from arch import arch_model
 import pyfolio as pf
 import statsmodels.formula.api as sm
 import pandas_datareader.data as web
@@ -9,15 +9,14 @@ import pandas as pd
 import quandl
 import datetime
 from ib_insync import *
-import matplotlib.pyplot as plt
-import seaborn as sns
-from matplotlib.ticker import FormatStrFormatter
 
+import seaborn as sns
+from option_simulation import OptionSimulation
 
 # Get history
 file_name = 'sp500_5min_bars'
 df_hist = read_feather(UpdateSP500Data.DATA_BASE_PATH / file_name)
-update_bars = False
+update_bars = True
 # Download latest
 if update_bars:
     ib = IB()
@@ -44,11 +43,13 @@ if update_bars:
 else:
     full_hist = df_hist.copy()
 
-
 squared_diff = (np.log(full_hist['close'] / full_hist['close'].shift(1)))**2
+realized_quadratic_variation = squared_diff.groupby(squared_diff.index.date).sum()
+realized_quadratic_variation = realized_quadratic_variation.reindex(pd.to_datetime(realized_quadratic_variation.index))
+rv_22 = realized_quadratic_variation.rolling(22).sum()
 
-realized_quadratic_variation = squared_diff.rolling(1716).sum().dropna() * 10000
-RV_calc = realized_quadratic_variation.resample('BM').bfill()
+# realized_quadratic_variation = squared_diff.rolling(1716).sum().dropna() * 10000
+RV_calc = rv_22.resample('BM').bfill()
 RV_calc = RV_calc.rename('RV_calc')
 vrp_data = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
                        usecols=['VRP', 'EVRP', 'IV', 'RV', 'ERV'])
@@ -95,3 +96,28 @@ regression_string = 'sp5_ret ~ VRP_combo'
 results = sm.ols(formula=regression_string, data=regression_data_quarterly).fit()
 results.summary()
 sns.lmplot(x='VRP_combo', y='sp5_ret', data=regression_data_quarterly, height=10, aspect=2)
+
+
+realized_volatility = np.sqrt(realized_quadratic_variation)
+series_list = []
+for i in range(500, len(realized_volatility) + 1):
+    am = arch_model(realized_volatility[i-500:i], mean='HAR', lags=[1, 5, 22],  vol='Constant')
+    res = am.fit()
+    forecasts = res.forecast(horizon=50)
+    np_vol = forecasts.mean.iloc[-1]
+    series_list.append(np_vol)
+
+e_vol = pd.concat(series_list, axis=1) * np.sqrt(252) * 100  # annualize
+
+
+
+
+
+e_vol = e_vol.transpose()
+mask = e_vol > 1
+e_vol[mask] = 1
+
+
+for i in range(1, len(foo)):
+    print(np.sqrt(foo[i]))
+
