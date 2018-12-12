@@ -1,29 +1,50 @@
-from option_utilities import read_feather, write_feather
-from spx_data_update import UpdateSP500Data, quandle_api
+# from option_utilities import read_feather, write_feather
+# from spx_data_update import UpdateSP500Data, quandle_api
 import numpy as np
 # from arch import arch_model
 import pyfolio as pf
 import statsmodels.formula.api as sm
+
 import pandas_datareader.data as web
 import pandas as pd
 import quandl
 import datetime
 import seaborn as sns
-from implied_to_realized import spx_bar_history
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from implied_to_realized import SPX5MinuteBars
 
-full_hist = spx_bar_history(update_bars=False)
+bars = SPX5MinuteBars()
+vol = bars.realized_vol()
+evol = bars.expected_vol()
+rv = bars.realized_variance()
+daily_ret = bars.daily_return()
 
-squared_diff = (np.log(full_hist['close'] / full_hist['close'].shift(1)))**2
-realized_quadratic_variation = squared_diff.groupby(squared_diff.index.date).sum()
-realized_quadratic_variation = realized_quadratic_variation.reindex(pd.to_datetime(realized_quadratic_variation.index))
 
-daily_vol = np.sqrt(realized_quadratic_variation * 252)
+
+
+
+
+
+
+
+for i in range(1, 10):
+    c = cm.viridis(i / 10, 1)
+    evol.iloc[:, -i].plot(color=c)
+
+plt.legend(evol.iloc[:, -10:].columns)
+
 
 [sp500, vix] = [web.get_data_yahoo(item, 'JAN-01-90') for item in ['^GSPC', '^VIX']]
 # rv_22 = realized_quadratic_variation.rolling(22).sum()
 
-sp_daily_ret = sp500['Adj Close']
+daily_ret = full_hist['close'].groupby(full_hist.index.date).last().pct_change()
+daily_ret = daily_ret.rename('sp5_ret')
+
+
+
+
+
 
 
 
@@ -77,16 +98,7 @@ sp_daily_ret = sp500['Adj Close']
 # sns.lmplot(x='VRP_combo', y='sp5_ret', data=regression_data_quarterly, height=10, aspect=2)
 #
 #
-# realized_volatility = np.sqrt(realized_quadratic_variation)
-# series_list = []
-# for i in range(500, len(realized_volatility) + 1):
-#     am = arch_model(realized_volatility[i-500:i], mean='HAR', lags=[1, 5, 22],  vol='Constant')
-#     res = am.fit()
-#     forecasts = res.forecast(horizon=50)
-#     np_vol = forecasts.mean.iloc[-1]
-#     series_list.append(np_vol)
-#
-# e_vol = pd.concat(series_list, axis=1) * np.sqrt(252) * 100  # annualize
+
 #
 #
 #
