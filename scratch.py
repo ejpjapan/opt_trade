@@ -1,9 +1,11 @@
 # from option_utilities import read_feather, write_feather
-# from spx_data_update import UpdateSP500Data, quandle_api
+from spx_data_update import UpdateSP500Data, quandle_api
 import numpy as np
 # from arch import arch_model
 import pyfolio as pf
 import statsmodels.formula.api as sm
+# import matplotlib
+# matplotlib.use('MacOSX')
 
 import pandas_datareader.data as web
 import pandas as pd
@@ -16,32 +18,24 @@ from implied_to_realized import SPX5MinuteBars
 
 bars = SPX5MinuteBars()
 vol = bars.realized_vol()
+vrp = bars.vol_risk_premium
 evol = bars.expected_vol()
-rv = bars.realized_variance()
+rv = bars.realized_variance() * 10000
 daily_ret = bars.daily_return()
 
-
-
-
-
-
-
-
-
-for i in range(1, 10):
+for i in range(0, 10):
     c = cm.viridis(i / 10, 1)
     evol.iloc[:, -i].plot(color=c)
 
-plt.legend(evol.iloc[:, -10:].columns)
-
-
 [sp500, vix] = [web.get_data_yahoo(item, 'JAN-01-90') for item in ['^GSPC', '^VIX']]
-# rv_22 = realized_quadratic_variation.rolling(22).sum()
 
-daily_ret = full_hist['close'].groupby(full_hist.index.date).last().pct_change()
-daily_ret = daily_ret.rename('sp5_ret')
-
-
+vix = vix['Close']
+IV = vix**2 / 12
+# Check IV is same as vpr['IV']
+# diff = vrp['IV'] - IV.resample('BM', closed='left').ffill().dropna()
+# diff.plot()
+# diff = vrp['RV'] - rv.resample('BM', closed='left').ffill().dropna()
+# diff.plot()
 
 
 
@@ -51,9 +45,7 @@ daily_ret = daily_ret.rename('sp5_ret')
 # # realized_quadratic_variation = squared_diff.rolling(1716).sum().dropna() * 10000
 # RV_calc = rv_22.resample('BM').bfill()
 # RV_calc = RV_calc.rename('RV_calc')
-# vrp_data = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
-#                        usecols=['VRP', 'EVRP', 'IV', 'RV', 'ERV'])
-# vrp_data = vrp_data.set_index(pd.date_range('31-jan-1990', '31-dec-2017', freq='BM'))
+
 #
 # [sp500, vix] = [web.get_data_yahoo(item, 'JAN-01-90') for item in ['^GSPC', '^VIX']]
 # sp_monthly_ret = sp500['Adj Close'].resample('BM').bfill().dropna().pct_change().dropna()

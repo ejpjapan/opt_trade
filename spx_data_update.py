@@ -224,12 +224,17 @@ def get_dates(feather_directory):
 
 
 def get_vix():
-    """Fetch vix from FRED'''
+    """Fetch vix from Yahoo'''
     :return: Dataframe
     """
-    fred_vix = web.DataReader(['VIXCLS'], 'fred', datetime.datetime(1990, 1, 1))
-    fred_vix = fred_vix.copy().dropna()
-    return fred_vix
+    # fred_vix = web.DataReader(['VIXCLS'], 'fred', datetime.datetime(1990, 1, 1))
+    # fred_vix = fred_vix.copy().dropna()
+
+    vix = web.get_data_yahoo('^VIX', 'JAN-01-90')
+    vix = vix['Close']
+    vix = vix.rename('VIXCLS')
+
+    return vix
 
 
 def get_sp5_dividend_yield():

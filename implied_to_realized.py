@@ -1,5 +1,5 @@
 from option_utilities import read_feather, write_feather
-from spx_data_update import UpdateSP500Data
+from spx_data_update import UpdateSP500Data, ImpliedVolatilityHistory
 from ib_insync import IB, Index, util
 import numpy as np
 import pandas as pd
@@ -10,6 +10,7 @@ class SPX5MinuteBars:
 
     def __init__(self):
         self.bars = self.spx_bar_history(update_bars=True)
+        self.vol_risk_premium = self.vrp()
 
     @staticmethod
     def spx_bar_history(update_bars=True):
@@ -37,6 +38,13 @@ class SPX5MinuteBars:
         else:
             full_hist = df_hist.copy()
         return full_hist
+
+    @staticmethod
+    def vrp():
+        vrp = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
+                               usecols=['VRP', 'EVRP', 'IV', 'RV', 'ERV'])
+        vrp = vrp.set_index(pd.date_range('31-jan-1990', '31-dec-2017', freq='BM'))
+        return vrp
 
     def realized_vol(self):
         """Annualized daily volatility calculated as sum of squared 5 minute returns"""
@@ -71,3 +79,4 @@ class SPX5MinuteBars:
     def daily_return(self):
         daily_ret = self.bars['close'].groupby(self.bars.index.date).last().pct_change()
         return daily_ret
+
