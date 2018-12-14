@@ -4,8 +4,8 @@ import numpy as np
 # from arch import arch_model
 import pyfolio as pf
 import statsmodels.formula.api as sm
-# import matplotlib
-# matplotlib.use('MacOSX')
+import matplotlib
+matplotlib.use('MacOSX')
 
 import pandas_datareader.data as web
 import pandas as pd

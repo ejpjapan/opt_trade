@@ -166,8 +166,8 @@ class GetRawCBOEOptionData:
 class ImpliedVolatilityHistory:
 
     def __init__(self):
-        vix_df = get_vix()
-        self.implied_vol_index = vix_df.squeeze(axis=1).rename('vix_index')
+        vix = get_vix()
+        self.implied_vol_index = vix.rename('vix_index')
 
     def save_vix_df(self, out_directory: Path, file_name='vix_index'):
         write_feather(self.implied_vol_index.to_frame(), str(out_directory / file_name))
@@ -176,7 +176,8 @@ class ImpliedVolatilityHistory:
 class DividendYieldHistory:
 
     def __init__(self):
-        self.dy_monthly = get_sp5_dividend_yield()
+        dy_monthly = get_sp5_dividend_yield()
+        self.dy_monthly = dy_monthly.rename(columns={"Value": "Yield Value"})
 
     def save_dividend_yield_df(self, out_directory: Path, file_name='sp500_dividend_yld'):
         # dividend_yield_df = self.dy_monthly.to_frame()
