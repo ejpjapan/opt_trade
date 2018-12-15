@@ -7,6 +7,7 @@ import statsmodels.formula.api as sm
 import matplotlib
 matplotlib.use('MacOSX')
 
+
 import pandas_datareader.data as web
 import pandas as pd
 import quandl
@@ -31,16 +32,25 @@ for i in range(0, 10):
 
 vix = vix['Close']
 IV = vix**2 / 12
+
+
+realized_variance = rv.c
+
+
+
+
+
+
 # Check IV is same as vpr['IV']
 # diff = vrp['IV'] - IV.resample('BM', closed='left').ffill().dropna()
 # diff.plot()
 # diff = vrp['RV'] - rv.resample('BM', closed='left').ffill().dropna()
 # diff.plot()
 
-
-
-
-
+# vrp_calc = IV.resample('BM', closed='left').ffill().dropna() - rv.resample('BM', closed='left').ffill().dropna()
+# vrp_calc = vrp_calc.dropna(how='any')
+# diff = vrp['VRP'] - vrp_calc
+# diff.plot()
 
 # # realized_quadratic_variation = squared_diff.rolling(1716).sum().dropna() * 10000
 # RV_calc = rv_22.resample('BM').bfill()
