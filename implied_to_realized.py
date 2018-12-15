@@ -8,8 +8,8 @@ from arch import arch_model
 
 class SPX5MinuteBars:
 
-    def __init__(self):
-        self.bars = self.spx_bar_history(update_bars=True)
+    def __init__(self, update_bars=True):
+        self.bars = self.spx_bar_history(update_bars)
         self.vol_risk_premium = self.vrp()
 
     @staticmethod
