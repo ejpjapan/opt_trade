@@ -17,7 +17,11 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from implied_to_realized import SPX5MinuteBars
 
-bars = SPX5MinuteBars()
+bars = SPX5MinuteBars(update_bars=False)
+evol = bars.expected_vol()
+
+
+
 vol = bars.realized_vol()
 vrp = bars.vol_risk_premium
 evol = bars.expected_vol()
@@ -32,12 +36,6 @@ for i in range(0, 10):
 
 vix = vix['Close']
 IV = vix**2 / 12
-
-
-realized_variance = rv.c
-
-
-
 
 
 

@@ -7,14 +7,14 @@ Created on Sat Mar 10 14:50:38 2018
 import calendar
 from time import time
 from datetime import timedelta, date
-from urllib.request import urlretrieve
 from pathlib import Path
-import pandas as pd
 import numpy as np
 import pandas_datareader.data as web
 from dateutil.relativedelta import relativedelta
 import feather
 from XmlConverter import XmlConverter
+from urllib.request import urlretrieve
+import pandas as pd
 
 
 def next_third_friday(dts):
@@ -199,3 +199,4 @@ class USZeroYieldCurve:
             print('File updated in ' + str(round(end_time-start_time)) + ' seconds')
         except:
             print('Zero curve update failed - Zero curve no updated')
+
