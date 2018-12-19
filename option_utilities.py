@@ -15,6 +15,7 @@ import feather
 from XmlConverter import XmlConverter
 from urllib.request import urlretrieve
 import pandas as pd
+import pyfolio as pf
 
 
 def next_third_friday(dts):
@@ -126,13 +127,13 @@ class USSimpleYieldCurve:
 
 class USZeroYieldCurve:
     """US Zero coupon 30 year interpolated yield curve"""
+    ZERO_URL = 'http://www.federalreserve.gov/econresdata/researchdata/feds200628.xls'
+    DB_PATH = Path.home() / 'Library'/ 'Mobile Documents' / 'com~apple~CloudDocs' / 'localDB' / 'xl'
+
     def __init__(self):
-        top_level_directory = Path.home() / 'Library'/ 'Mobile Documents' / 'com~apple~CloudDocs'
-        self.url = 'http://www.federalreserve.gov/econresdata/researchdata/feds200628.xls'
-        self.db_path = top_level_directory / 'localDB' / 'xl'
         self.relative_dates = [relativedelta(days=1), relativedelta(months=3), relativedelta(months=6)] + \
                               [relativedelta(years=x) for x in range(1, 31)]
-        fed_zero_feather = Path(self.db_path / 'fedzero.feather')
+        fed_zero_feather = Path(self.DB_PATH / 'fedzero.feather')
         if fed_zero_feather.is_file():
             # load old file
             seconds_since_update = time() - fed_zero_feather.stat().st_mtime
@@ -182,8 +183,8 @@ class USZeroYieldCurve:
         try:
             print('Updating zero coupon yields')
             start_time = time()
-            urlretrieve(self.url, self.db_path / 'feds200628.xls')
-            converter = XmlConverter(input_path=str(self.db_path) + '/feds200628.xls',
+            urlretrieve(self.ZERO_URL, self.DB_PATH / 'feds200628.xls')
+            converter = XmlConverter(input_path=str(self.DB_PATH) + '/feds200628.xls',
                                      first_header='SVENY01', last_header='TAU2')
             converter.parse()
             gsw_zero = converter.build_dataframe()
@@ -194,9 +195,19 @@ class USZeroYieldCurve:
             fred_data = web.DataReader(['DFF', 'DTB3', 'DTB6'], 'fred', start_date)
             zero_yld_matrix = pd.concat([fred_data.dropna(), gsw_zero], axis=1)
             zero_yld_matrix = zero_yld_matrix.fillna(method='ffill')
-            write_feather(zero_yld_matrix, str(self.db_path / 'fedzero.feather'))
+            write_feather(zero_yld_matrix, str(self.DB_PATH / 'fedzero.feather'))
             end_time = time()
             print('File updated in ' + str(round(end_time-start_time)) + ' seconds')
         except:
             print('Zero curve update failed - Zero curve no updated')
 
+    def cash_index(self):
+        """Daily Cash return index based on monthly investment in 3-month t-bill"""
+        discount_yield = self.zero_yields['DTB3'].resample('BM').ffill()
+        face_value = 10000
+        tbill_price = face_value - (discount_yield / 100 * 91 * face_value) / 360
+        investment_yield = (face_value - tbill_price) / face_value * (365 / 91)
+        return_per_day_month = (investment_yield.shift(1) / 12) / investment_yield.shift(1).index.days_in_month
+        return_per_day = return_per_day_month.resample('D').bfill()
+        cash_idx = pf.timeseries.cum_returns(return_per_day, 100)
+        return cash_idx
