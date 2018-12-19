@@ -196,10 +196,10 @@ class OptionSimulation:
 
 
 class OptionTrades:
-    def __init__(self, dtf_trades: tuple, leverage: float):
-        self.dtf_trades = dtf_trades[0]
-        self.zscore = dtf_trades[1]
-        self.sim_dates_live = dtf_trades[2]
+    def __init__(self, dtf_trades, zscore, sim_dates_live, leverage: float):
+        self.dtf_trades = dtf_trades
+        self.zscore = zscore
+        self.sim_dates_live = sim_dates_live
 
         if np.isscalar(leverage):
             self.leverage = pd.Series(leverage, self.sim_dates_live)
