@@ -84,9 +84,7 @@ def get_theoretical_strike(trade_dates, expiry_dates, spot_price, risk_free, z_s
     if listing_spread != '':
         theoretical_strike = np.transpose(np.round(theoretical_strike) -
                                           np.mod(np.round(theoretical_strike), listing_spread))
-    debug_time_discount = time_discount
-    debug_vol_z = np.multiply(time_scale, z_score_tile)
-    return theoretical_strike, debug_time_discount, debug_vol_z, option_life
+    return theoretical_strike
 
 
 def write_feather(dataframe: pd.DataFrame, source: str):
