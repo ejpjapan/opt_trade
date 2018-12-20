@@ -28,7 +28,7 @@ class OptionSimulation:
 
     def __init__(self, update_simulation_data=False):
         if update_simulation_data:
-            updater = UpdateSP500Data()
+            _ = UpdateSP500Data()
         self.feather_directory = UpdateSP500Data.TOP_LEVEL_PATH / 'feather'
         self.usZeroYldCurve = USZeroYieldCurve()
         file_names = {'spot': 'sp500_close', 'sigma': 'vix_index', 'dividend_yield': 'sp500_dividend_yld'}

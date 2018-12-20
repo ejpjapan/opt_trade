@@ -75,7 +75,7 @@ def get_theoretical_strike(trade_dates, expiry_dates, spot_price, risk_free, z_s
     option_life = np.array([timeDelta.days / 365 for timeDelta in
                             [expiryDate - tradeDate for expiryDate,
                              tradeDate in zip(expiry_dates, trade_dates)]])
-    time_discount = np.tile((np.transpose(risk_free / 100) - dividend_yield + (sigma ** 2) / 2) *
+    time_discount = np.tile((np.transpose(risk_free) - dividend_yield + (sigma ** 2) / 2) *
                             option_life, (np.size(z_score), 1))
     time_scale = np.tile(sigma * np.sqrt(option_life), (np.size(z_score), 1))
     z_score_tile = np.transpose(np.tile(z_score, (num_exp, 1)))
@@ -83,8 +83,10 @@ def get_theoretical_strike(trade_dates, expiry_dates, spot_price, risk_free, z_s
                                              np.multiply(time_scale, z_score_tile))
     if listing_spread != '':
         theoretical_strike = np.transpose(np.round(theoretical_strike) -
-                                      np.mod(np.round(theoretical_strike), listing_spread))
-    return theoretical_strike
+                                          np.mod(np.round(theoretical_strike), listing_spread))
+    debug_time_discount = time_discount
+    debug_vol_z = np.multiply(time_scale, z_score_tile)
+    return theoretical_strike, debug_time_discount, debug_vol_z, option_life
 
 
 def write_feather(dataframe: pd.DataFrame, source: str):
@@ -126,7 +128,7 @@ class USSimpleYieldCurve:
 
 
 class USZeroYieldCurve:
-    """US Zero coupon 30 year interpolated yield curve"""
+    """US Zero coupon overnnight to 30 year interpolated yield curve"""
     ZERO_URL = 'http://www.federalreserve.gov/econresdata/researchdata/feds200628.xls'
     DB_PATH = Path.home() / 'Library'/ 'Mobile Documents' / 'com~apple~CloudDocs' / 'localDB' / 'xl'
 
@@ -202,7 +204,7 @@ class USZeroYieldCurve:
             print('Zero curve update failed - Zero curve no updated')
 
     def cash_index(self):
-        """Daily Cash return index based on monthly investment in 3-month t-bill"""
+        """Daily Cash return index based on monthly investment in a 3-month t-bill"""
         discount_yield = self.zero_yields['DTB3'].resample('BM').ffill()
         face_value = 10000
         tbill_price = face_value - (discount_yield / 100 * 91 * face_value) / 360
