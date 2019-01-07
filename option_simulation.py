@@ -28,7 +28,7 @@ class OptionSimulation:
 
     def __init__(self, update_simulation_data=False):
         if update_simulation_data:
-            updater = UpdateSP500Data()
+            _ = UpdateSP500Data()
         self.feather_directory = UpdateSP500Data.TOP_LEVEL_PATH / 'feather'
         self.usZeroYldCurve = USZeroYieldCurve()
         file_names = {'spot': 'sp500_close', 'sigma': 'vix_index', 'dividend_yield': 'sp500_dividend_yld'}
@@ -103,12 +103,21 @@ class OptionSimulation:
         dividend_yield = trade_model_inputs.loc[:, 'Yield Value'].values / 100
         sigma = trade_model_inputs.loc[:, 'vix_index'].values / 100
         risk_free = trade_model_inputs.loc[:, 'zeros'].values / 100
-        option_strikes_theoretical = get_theoretical_strike(self.trade_dates,
-                                                            self.expiration_actual,
-                                                            spot_price, risk_free, zscore,
-                                                            dividend_yield, sigma)
+        option_strikes_theoretical = []
+        for counter in range(0, len(spot_price)):
+            option_strike_theoretical = get_theoretical_strike((self.trade_dates[counter], ),
+                                                               (self.expiration_actual[counter], ),
+                                                                spot_price[counter], risk_free[counter], zscore,
+                                                                dividend_yield[counter], sigma[counter])
+            option_strikes_theoretical.append(option_strike_theoretical.flatten())
+        # option_strikes_theoretical = get_theoretical_strike(self.trade_dates,
+        #                                                     self.expiration_actual,
+        #                                                     spot_price, risk_free, zscore,
+        #                                                     dividend_yield, sigma)
+
+        option_strikes_theoretical = np.array(option_strikes_theoretical)
         # self.trade_model_inputs = trade_model_inputs
-        trade_model_inputs['strike_theoretical'] = np.transpose(option_strikes_theoretical)
+        trade_model_inputs['strike_theoretical'] = option_strikes_theoretical
 
         sim_dates_live = pd.date_range(self.trade_dates[0], self.sim_dates_all[-1], freq='B')
         sim_dates_live = sim_dates_live.intersection(self.sim_dates_all)
@@ -196,10 +205,10 @@ class OptionSimulation:
 
 
 class OptionTrades:
-    def __init__(self, dtf_trades: tuple, leverage: float):
-        self.dtf_trades = dtf_trades[0]
-        self.zscore = dtf_trades[1]
-        self.sim_dates_live = dtf_trades[2]
+    def __init__(self, dtf_trades, zscore, sim_dates_live, leverage: float):
+        self.dtf_trades = dtf_trades
+        self.zscore = zscore
+        self.sim_dates_live = sim_dates_live
 
         if np.isscalar(leverage):
             self.leverage = pd.Series(leverage, self.sim_dates_live)

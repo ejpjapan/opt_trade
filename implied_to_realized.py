@@ -1,97 +1,107 @@
 from option_utilities import read_feather, write_feather
-from spx_data_update import UpdateSP500Data, quandle_api
+from spx_data_update import UpdateSP500Data
+from ib_insync import IB, Index, util
 import numpy as np
-# from arch import arch_model
-import pyfolio as pf
-import statsmodels.formula.api as sm
-import pandas_datareader.data as web
 import pandas as pd
-import quandl
-import datetime
-from ib_insync import *
+from arch import arch_model
 import matplotlib.pyplot as plt
-import seaborn as sns
-from matplotlib.ticker import FormatStrFormatter
+import matplotlib.cm as cm
 
 
-# Get history
-file_name = 'sp500_5min_bars'
-df_hist = read_feather(UpdateSP500Data.DATA_BASE_PATH / file_name)
-update_bars = False
-# Download latest
-if update_bars:
-    ib = IB()
-    ib.connect('127.0.0.1', port=4001, clientId=40)
+class SPX5MinuteBars:
 
-    contract = Index('SPX', 'CBOE', 'USD')
+    def __init__(self, update_bars=True):
+        self.bars = self.spx_bar_history(update_bars)
+        self.vol_risk_premium = self.vrp()
+        self.har_vol = pd.DataFrame()
 
-    end = datetime.datetime(2006, 12, 6, 9, 30)
+    @staticmethod
+    def spx_bar_history(update_bars=True):
+        file_name = 'sp500_5min_bars'
+        df_hist = read_feather(UpdateSP500Data.DATA_BASE_PATH / file_name)
+        # Download latest
+        if update_bars:
+            ib = IB()
+            ib.connect('127.0.0.1', port=4001, clientId=40)
+            contract = Index('SPX', 'CBOE', 'USD')
+            bars = ib.reqHistoricalData(
+                contract,
+                endDateTime='',
+                durationStr='1 M',
+                barSizeSetting='5 mins',
+                whatToShow='TRADES',
+                useRTH=True,
+                formatDate=1)
 
-    bars = ib.reqHistoricalData(
-            contract,
-            endDateTime='',
-            durationStr='1 M',
-            barSizeSetting='5 mins',
-            whatToShow='TRADES',
-            useRTH=True,
-            formatDate=1)
+            ib.disconnect()
+            df = util.df(bars)
+            df = df.set_index('date')
+            full_hist = df.combine_first(df_hist)
+            write_feather(full_hist, UpdateSP500Data.DATA_BASE_PATH / file_name)
+        else:
+            full_hist = df_hist.copy()
+        return full_hist
 
-    ib.disconnect()
-    df = util.df(bars)
-    df = df.set_index('date')
-    full_hist = df.combine_first(df_hist)
-    write_feather(full_hist, UpdateSP500Data.DATA_BASE_PATH / file_name)
-else:
-    full_hist = df_hist.copy()
+    @staticmethod
+    def vrp():
+        vrp = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
+                               usecols=['VRP', 'EVRP', 'IV', 'RV', 'ERV'])
+        vrp = vrp.set_index(pd.date_range('31-jan-1990', '31-dec-2017', freq='BM'))
+        return vrp
 
+    def plot_vol_forecast(self, num_days=10):
+        expected_volatility = self.expected_vol()
+        fig, ax = plt.subplots(figsize=(12, 5), dpi=80, facecolor='w', edgecolor='k')
 
-squared_diff = (np.log(full_hist['close'] / full_hist['close'].shift(1)))**2
+        for i in range(-1, -(num_days + 1), -1):
+            if i == -1:
+                expected_volatility.iloc[:, -1].plot(color='r')
+            else:
+                c = cm.viridis(-i / num_days, 1)
+                expected_volatility.iloc[:, i].plot(color=c)
 
-realized_quadratic_variation = squared_diff.rolling(1716).sum().dropna() * 10000
-RV_calc = realized_quadratic_variation.resample('BM').bfill()
-RV_calc = RV_calc.rename('RV_calc')
-vrp_data = pd.read_csv(UpdateSP500Data.DATA_BASE_PATH / 'xl' / 'vol_risk_premium.csv',
-                       usecols=['VRP', 'EVRP', 'IV', 'RV', 'ERV'])
-vrp_data = vrp_data.set_index(pd.date_range('31-jan-1990', '31-dec-2017', freq='BM'))
+        plt.autoscale(enable=True, axis='x', tight=True)
+        legend_labels = expected_volatility.iloc[:, -num_days:].columns.strftime('%d-%b')
+        _ = plt.legend(legend_labels[::-1])
+        _ = plt.title('HAR Volatity Forecast')
+        _ = ax.set_ylabel('Annualized Vol %')
+        return ax
 
-[sp500, vix] = [web.get_data_yahoo(item, 'JAN-01-90') for item in ['^GSPC', '^VIX']]
-sp_monthly_ret = sp500['Adj Close'].resample('BM').bfill().dropna().pct_change().dropna()
+    def realized_vol(self):
+        """Annualized daily volatility calculated as sum of squared 5 minute returns"""
+        squared_diff = (np.log(self.bars['close'] / self.bars['close'].shift(1))) ** 2
+        realized_quadratic_variation = squared_diff.groupby(squared_diff.index.date).sum()
+        realized_quadratic_variation = realized_quadratic_variation.reindex(
+            pd.to_datetime(realized_quadratic_variation.index))
+        daily_vol = np.sqrt(realized_quadratic_variation * 252)
+        daily_vol = daily_vol.rename('rv_daily')
+        return daily_vol
 
-sp_quarterly_ret = sp500['Adj Close'].resample('BQ').bfill().dropna().pct_change().dropna()
-[sp_monthly_ret, sp_quarterly_ret] = [df.rename('sp5_ret') for df in [sp_monthly_ret, sp_quarterly_ret]]
+    def expected_vol(self, window=500, horizon=50):
+        """Expected volatility out to 50 days using HAR model"""
+        if self.har_vol.empty:
+            daily_vol = self.realized_vol()
+            series_list = []
+            for i in range(window, len(daily_vol) + 1):
+                am = arch_model(daily_vol[i - window:i], mean='HAR', lags=[1, 5, 22], vol='Constant')
+                res = am.fit()
+                forecasts = res.forecast(horizon=horizon)
+                np_vol = forecasts.mean.iloc[-1]
+                series_list.append(np_vol)
+            e_vol = pd.concat(series_list, axis=1)
+            self.har_vol = e_vol
+        else:
+            e_vol = self.har_vol
+        return e_vol
 
-quandl.ApiConfig.api_key = quandle_api()
-cape = quandl.get('MULTPL/SHILLER_PE_RATIO_MONTH', collapse='monthly')
+    def realized_variance(self, window=22):
+        """Realized variance see VRP literature"""
+        realized_quadratic_variation = (self.realized_vol()**2) / 252
+        rv = realized_quadratic_variation.rolling(window).sum()
+        rv = rv.rename('RV_CALC')
+        return rv
 
-cape = np.log(cape['Value'].rename('cape'))
+    def daily_return(self):
+        daily_ret = self.bars['close'].groupby(self.bars.index.date).last().pct_change()
+        return daily_ret
 
-IV_calc = vix['Close']**2/12
-IV_calc = IV_calc.rename('IV_calc')
-IV_calc = IV_calc.resample('BM').bfill()
-VRP_calc = IV_calc - RV_calc
-VRP_calc = VRP_calc.rename('VRP_calc')
-
-VRP_combo = VRP_calc.combine_first(vrp_data['VRP'])
-VRP_combo = VRP_combo.rename('VRP_combo')
-
-regression_data = pd.concat([sp_monthly_ret, VRP_combo.shift(1), vrp_data['VRP'].shift(1),
-                             cape.shift(1).resample('BM').bfill()], axis=1)
-
-regression_data = regression_data.dropna(axis=0, how='any')
-
-regression_string = 'sp5_ret ~ VRP_combo'
-results = sm.ols(formula=regression_string, data=regression_data).fit()
-results.summary()
-sns.lmplot(x='VRP_combo', y='sp5_ret', data=regression_data , height=10, aspect=2)
-
-[VRP_combo_q, vrp_data_q, cape_q] = [df.resample('BQ').bfill() for df in [VRP_combo, vrp_data, cape]]
-
-
-regression_data_quarterly = pd.concat([sp_quarterly_ret, VRP_combo_q.shift(1), cape_q.shift(1)],
-                                      axis=1)
-regression_data_quarterly = regression_data_quarterly.dropna(axis=0, how='any')
-
-regression_string = 'sp5_ret ~ VRP_combo'
-results = sm.ols(formula=regression_string, data=regression_data_quarterly).fit()
-results.summary()
-sns.lmplot(x='VRP_combo', y='sp5_ret', data=regression_data_quarterly, height=10, aspect=2)

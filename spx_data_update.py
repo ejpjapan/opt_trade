@@ -9,14 +9,13 @@ import feather
 import pandas as pd
 import numpy as np
 import pandas_datareader.data as web
-import datetime
 import quandl
 from option_utilities import USZeroYieldCurve, write_feather
 
 
 class UpdateSP500Data:
     DATA_BASE_PATH = Path.home() / 'Library' / 'Mobile Documents' / 'com~apple~CloudDocs' / 'localDB'
-    TOP_LEVEL_PATH = DATA_BASE_PATH / 'cboeRawVolData_copy'
+    TOP_LEVEL_PATH = DATA_BASE_PATH / 'cboeRawVolData'
 
     def __init__(self):
         # Check basic file structure exists, if not create it
@@ -166,8 +165,8 @@ class GetRawCBOEOptionData:
 class ImpliedVolatilityHistory:
 
     def __init__(self):
-        vix_df = get_vix()
-        self.implied_vol_index = vix_df.squeeze(axis=1).rename('vix_index')
+        vix = get_vix()
+        self.implied_vol_index = vix.rename('vix_index')
 
     def save_vix_df(self, out_directory: Path, file_name='vix_index'):
         write_feather(self.implied_vol_index.to_frame(), str(out_directory / file_name))
@@ -176,7 +175,8 @@ class ImpliedVolatilityHistory:
 class DividendYieldHistory:
 
     def __init__(self):
-        self.dy_monthly = get_sp5_dividend_yield()
+        dy_monthly = get_sp5_dividend_yield()
+        self.dy_monthly = dy_monthly.rename(columns={"Value": "Yield Value"})
 
     def save_dividend_yield_df(self, out_directory: Path, file_name='sp500_dividend_yld'):
         # dividend_yield_df = self.dy_monthly.to_frame()
@@ -224,12 +224,17 @@ def get_dates(feather_directory):
 
 
 def get_vix():
-    """Fetch vix from FRED'''
+    """Fetch vix from Yahoo'''
     :return: Dataframe
     """
-    fred_vix = web.DataReader(['VIXCLS'], 'fred', datetime.datetime(1990, 1, 1))
-    fred_vix = fred_vix.copy().dropna()
-    return fred_vix
+    # fred_vix = web.DataReader(['VIXCLS'], 'fred', datetime.datetime(1990, 1, 1))
+    # fred_vix = fred_vix.copy().dropna()
+
+    vix = web.get_data_yahoo('^VIX', 'JAN-01-90')
+    vix = vix['Close']
+    vix = vix.rename('VIXCLS')
+
+    return vix
 
 
 def get_sp5_dividend_yield():
