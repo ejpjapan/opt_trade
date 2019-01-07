@@ -9,14 +9,13 @@ import feather
 import pandas as pd
 import numpy as np
 import pandas_datareader.data as web
-import datetime
 import quandl
 from option_utilities import USZeroYieldCurve, write_feather
 
 
 class UpdateSP500Data:
     DATA_BASE_PATH = Path.home() / 'Library' / 'Mobile Documents' / 'com~apple~CloudDocs' / 'localDB'
-    TOP_LEVEL_PATH = DATA_BASE_PATH / 'cboeRawVolData_copy'
+    TOP_LEVEL_PATH = DATA_BASE_PATH / 'cboeRawVolData'
 
     def __init__(self):
         # Check basic file structure exists, if not create it
