@@ -205,3 +205,4 @@ class USZeroYieldCurve:
         return_per_day = return_per_day_month.resample('D').bfill()
         cash_idx = pf.timeseries.cum_returns(return_per_day, 100)
         return cash_idx
+
