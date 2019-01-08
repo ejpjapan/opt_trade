@@ -61,25 +61,20 @@ def get_theoretical_strike(trade_dates, expiry_dates, spot_price, risk_free, z_s
                            listing_spread=''):
     """Returns option strike with constant delta"""
     num_exp = np.size(expiry_dates)
-    if np.size(trade_dates) != num_exp:
-        trade_dates = np.tile(trade_dates, num_exp)
-    # if np.isscalar(spot_price):
-    #     spot_price = np.tile(spot_price, (num_exp, np.size(z_score)))
-    if np.isscalar(sigma):
-        sigma = np.tile(sigma, (num_exp, np.size(z_score)))
-    if np.isscalar(dividend_yield):
-        dividend_yield = np.tile(dividend_yield, (num_exp, np.size(z_score)))
-    if risk_free.shape != (num_exp, np.size(z_score)):
-        risk_free = np.tile(risk_free, np.size(z_score))
+    if len(trade_dates) == 1:  # Daily run use case
+        trade_dates = trade_dates.repeat(num_exp)
+        sigma = np.tile(sigma, num_exp)
+        dividend_yield = np.tile(dividend_yield, num_exp)
+        spot_price = np.tile(spot_price, num_exp)
+
     option_life = np.array([timeDelta.days / 365 for timeDelta in
                             [expiryDate - tradeDate for expiryDate,
                              tradeDate in zip(expiry_dates, trade_dates)]])
-
-    option_life = np.transpose(np.tile(option_life, (np.size(z_score), 1)))
-    time_discount = (risk_free - dividend_yield + (sigma ** 2) / 2) * option_life
-    time_scale = sigma * np.sqrt(option_life)
-    z_score_tile = np.tile(z_score, (num_exp, 1))
-    theoretical_strike = spot_price * np.exp(time_discount + np.multiply(time_scale, z_score_tile))
+    time_discount = np.multiply((risk_free - dividend_yield + (sigma ** 2) / 2), option_life)
+    time_scale = np.multiply(sigma, np.sqrt(option_life))
+    theoretical_strike = [np.multiply(spot_price, np.exp(time_discount + np.multiply(time_scale, score))) for score in
+                          z_score]
+    theoretical_strike = np.column_stack(tuple(theoretical_strike))
     if listing_spread != '':
         theoretical_strike = np.transpose(np.round(theoretical_strike) -
                                           np.mod(np.round(theoretical_strike), listing_spread))

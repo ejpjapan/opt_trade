@@ -189,15 +189,11 @@ class TradeChoice:
         return df_out
 
     def option_lots(self, leverage, capital_at_risk):
-        # capital_at_risk = float(self.account_value[0].value)
-        num_expiries = len(self.expirations)
         risk_free = self.yield_curve.get_zero4_date(self.expirations) / 100
         option_life = np.array([timeDelta.days / 365 for timeDelta in
-                                [expiryDate.date() - self.trade_date for expiryDate in self.expirations]])
-
-        strike_discount = np.tile(np.transpose(np.exp(np.multiply(np.transpose(- risk_free.values), option_life))),
-                                  num_expiries)
-        notional_capital = np.multiply(strike_discount, self.strike_grid().copy()) - self.premium_grid()
+                                [expiryDate - self.trade_date for expiryDate in self.expirations]])
+        strike_discount = np.exp(- np.multiply(risk_free.squeeze().values, option_life))
+        notional_capital = self.strike_grid().mul(strike_discount, axis='index') - self.premium_grid()
         contract_lots = [round(capital_at_risk / (notional_capital.copy() / num_leverage * 100), 0)
                          for num_leverage in leverage]
         for counter, df in enumerate(contract_lots):
@@ -230,7 +226,7 @@ class OptionMarket:
 
     def __init__(self, opt_asset: OptionAsset):
         self.option_asset = opt_asset
-        self.trade_date = pd.datetime.today().date()
+        self.trade_date = pd.DatetimeIndex([pd.datetime.today()])
         self.zero_curve = USSimpleYieldCurve()
         self.dividend_yield = self.option_asset.get_dividend_yield()
 
@@ -288,8 +284,8 @@ class OptionMarket:
 
         last_price = mkt_prices[0]
         sigma = mkt_prices[1] / 100
-        theoretical_strikes = get_theoretical_strike(self.trade_date, option_expiry,
-                                                     last_price, risk_free.values,
+        theoretical_strikes = get_theoretical_strike(self.trade_date.date, option_expiry,
+                                                     last_price, risk_free.squeeze().values,
                                                      z_score, self.dividend_yield, sigma)
 
         expiration_date_list = last_trade_dates_df['expirations'].iloc[0:num_expiries].tolist()

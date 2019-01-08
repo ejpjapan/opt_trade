@@ -104,16 +104,16 @@ class OptionSimulation:
         sigma = trade_model_inputs.loc[:, 'vix_index'].values / 100
         risk_free = trade_model_inputs.loc[:, 'zeros'].values / 100
         option_strikes_theoretical = []
-        for counter in range(0, len(spot_price)):
-            option_strike_theoretical = get_theoretical_strike((self.trade_dates[counter], ),
-                                                               (self.expiration_actual[counter], ),
-                                                                spot_price[counter], risk_free[counter], zscore,
-                                                                dividend_yield[counter], sigma[counter])
-            option_strikes_theoretical.append(option_strike_theoretical.flatten())
-        # option_strikes_theoretical = get_theoretical_strike(self.trade_dates,
-        #                                                     self.expiration_actual,
-        #                                                     spot_price, risk_free, zscore,
-        #                                                     dividend_yield, sigma)
+        # for counter in range(0, len(spot_price)):
+        #     option_strike_theoretical = get_theoretical_strike((self.trade_dates[counter], ),
+        #                                                        (self.expiration_actual[counter], ),
+        #                                                         spot_price[counter], risk_free[counter], zscore,
+        #                                                         dividend_yield[counter], sigma[counter])
+        #     option_strikes_theoretical.append(option_strike_theoretical.flatten())
+        option_strikes_theoretical = get_theoretical_strike(self.trade_dates,
+                                                            self.expiration_actual,
+                                                            spot_price, risk_free, zscore,
+                                                            dividend_yield, sigma)
 
         option_strikes_theoretical = np.array(option_strikes_theoretical)
         # self.trade_model_inputs = trade_model_inputs
