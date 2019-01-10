@@ -18,6 +18,18 @@ import pandas as pd
 import pyfolio as pf
 
 
+def time_it(method):
+
+    def timed(*args, **kw):
+        ts = time()
+        result = method(*args, **kw)
+        te = time()
+        print('Function: {} took {:.5f} sec'.format(method.__name__, te - ts))
+        return result
+
+    return timed
+
+
 def next_third_friday(dts):
     """ Given a third friday find next third friday"""
     dts += timedelta(weeks=4)
@@ -35,7 +47,6 @@ def third_fridays(dts, num_dts):
     for _ in range(num_dts - 1):
         result.append(next_third_friday(result[-1]))
     return result
-
 
 def get_live_option_expiries(expiry_dates_theo, trade_dates, in_dir):
     """retrieve available option expiries given theoretical expiries and trade_dates"""
@@ -150,7 +161,7 @@ class USZeroYieldCurve:
             zeros = []
             for each_date, each_maturity in zip(as_of_dates, maturity_dates):
                 zeros.append(self.__get_zero_4date(each_date, each_maturity, date_adjust))
-            return pd.concat(zeros)
+            return zeros
 
     def __get_zero_4date(self, as_of_date, maturity_date, date_adjust):
         """Interpolate yield curve between points"""
@@ -166,11 +177,17 @@ class USZeroYieldCurve:
         else:
             zero_yld_curve = self.zero_yields.loc[[as_of_date]]
 
-        zero_yld_curve = pd.DataFrame(data=np.transpose(zero_yld_curve.values),
-                                      index=maturities, columns=[as_of_date])
-        # TODO check 2nd order polynomial yield curve interpolation
-        zero_yld_curve = zero_yld_curve.resample('D').interpolate(method='polynomial', order=2)
-        return zero_yld_curve.loc[maturity_date]
+        zero_yld_series = pd.Series(data=zero_yld_curve.values.squeeze(), index=maturities)
+        if not(maturity_date in maturities):
+            zero_yld_series.loc[pd.to_datetime(maturity_date)] = float('nan')
+            zero_yld_series = zero_yld_series.sort_index()
+        zero_yld_series = zero_yld_series.interpolate(method='polynomial', order=2)
+        return zero_yld_series[maturity_date]
+        # zero_yld_curve = pd.DataFrame(data=np.transpose(zero_yld_curve.values),
+        #                               index=maturities, columns=[as_of_date])
+        # # TODO check 2nd order polynomial yield curve interpolation
+        # zero_yld_curve = zero_yld_curve.resample('D').interpolate(method='polynomial', order=2)
+        # return zero_yld_curve.loc[maturity_date]
 
     def get_raw_zeros(self):
         """Update zero coupon yields from FED and FRED"""
