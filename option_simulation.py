@@ -203,6 +203,7 @@ class OptionSimulation:
             diff = sub_set.difference(super_set)
         return sub_set
 
+
 class OptionTrades:
     def __init__(self, dtf_trades, zscore, sim_dates_live, leverage: float):
         self.dtf_trades = dtf_trades
@@ -281,10 +282,24 @@ class OptionTrades:
 
     def performance(self):
         performance = pf.timeseries.perf_stats(self.returns[1])
+        perf_index = list(performance.index)
         performance['Leverage'] = self.leverage.mean()
         performance['ZScore'] = self.zscore
-
+        performance['StartDate'] = self.returns[1].index[0].strftime('%b-%d, %Y')
+        performance['EndDate'] = self.returns[1].index[-1].strftime('%b-%d, %Y')
+        performance['Avg_Days'] = self.get_days_2_expiry().mean()
+        performance = performance.reindex(['StartDate', 'EndDate', 'Leverage', 'ZScore', 'Avg_Days'] + perf_index)
+        performance = performance.append(self.get_greeks().mean())
+        performance = performance.to_frame()
         return performance
+
+    # def strategy_name(self):
+    #
+    #     return strat_name
+
+    @staticmethod
+    def get_column(col_head):
+        return [i for i in OptionSimulation.GREEK_COL_NAMES if not (i.find('col_head'))]
 
     @staticmethod
     def plot_performance_quad(returns, fig_path=None, font_size=20):

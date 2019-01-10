@@ -14,7 +14,7 @@ stmt = root.FlexStatements.FlexStatement
 # Withdrawals and deposits
 node = stmt.CashTransactions
 cash_trans = pd.DataFrame([dict(zip(c.keys(), c.values())) for
-                         c in node.getchildren()])
+                           c in node.getchildren()])
 cash_trans.amount = cash_trans.amount.astype(np.float64)
 cash_trans.dateTime = pd.to_datetime(cash_trans.dateTime)
 cash_trans = cash_trans.groupby('dateTime').sum()
