@@ -12,7 +12,7 @@ from ib_insync import IB, Index, Option
 from option_utilities import third_fridays, USSimpleYieldCurve, get_theoretical_strike
 from spx_data_update import DividendYieldHistory
 from ib_insync.util import isNan
-
+import time
 
 class OptionAsset(ABC):
     def __init__(self, mkt_symbol, vol_symbol, exchange_dict, port=4001, client_id=20):
@@ -192,8 +192,9 @@ class TradeChoice:
         risk_free = self.yield_curve.get_zero4_date(self.expirations) / 100
         option_life = np.array([timeDelta.days / 365 for timeDelta in
                                 [expiryDate - self.trade_date for expiryDate in self.expirations]])
-        strike_discount = np.exp(- np.multiply(risk_free.squeeze().values, option_life))
-        notional_capital = self.strike_grid().mul(strike_discount, axis='index') - self.premium_grid()
+        strike_discount = np.exp(- risk_free.mul(option_life))
+        strike_discount = strike_discount[strike_discount.columns[0]] # convert to series
+        notional_capital = self.strike_grid().mul(strike_discount, axis=0) - self.premium_grid()
         contract_lots = [round(capital_at_risk / (notional_capital.copy() / num_leverage * 100), 0)
                          for num_leverage in leverage]
         for counter, df in enumerate(contract_lots):
@@ -209,13 +210,13 @@ class TradeChoice:
         # 100% of premium + 10% * strike
         single_margin_b = self.premium_grid() + 0.1 * self.strike_grid()
         margin = pd.concat([single_margin_a, single_margin_b]).max(level=0)
-        return margin * int(self.tickers[0].contract.multiplier)
+        margin = margin * int(self.tickers[0].contract.multiplier)
+        return margin
 
     @staticmethod
     def _format_index(df_in):
         df_out = df_in.set_index(df_in.index.strftime('%Y.%m.%e'))
         return df_out
-
 
 class OptionMarket:
     """IB Interface class that fetches data from IB to pass to trade choice object
@@ -230,6 +231,7 @@ class OptionMarket:
         self.zero_curve = USSimpleYieldCurve()
         self.dividend_yield = self.option_asset.get_dividend_yield()
 
+    # @time_it
     def form_trade_choice(self, z_score, num_expiries, right='P'):
         """Forms option trade choice
 
@@ -263,6 +265,7 @@ class OptionMarket:
         ib.disconnect()
         return trd_choice
 
+    # @time_it
     def _option_tickers(self, ib, mkt_prices, num_expiries, z_score, right):
         """ Retrieves valid option tickers based on theoretical strikes
 
@@ -290,10 +293,11 @@ class OptionMarket:
 
         expiration_date_list = last_trade_dates_df['expirations'].iloc[0:num_expiries].tolist()
         theoretical_strike_list = theoretical_strikes.flatten().tolist()
-        expiration_date_list = [item for item in expiration_date_list for i in range(num_expiries)]
+        expiration_date_list = [item for item in expiration_date_list for i in range(len(z_score))]
         contracts = [self._get_closest_valid_contract(strike, expiration, ib, right) for strike, expiration in
                      zip(theoretical_strike_list, expiration_date_list)]
         contracts_flat = [item for sublist in contracts for item in sublist]
+
         tickers = ib.reqTickers(*contracts_flat)
 
         # Alternative to get live tickers
@@ -319,8 +323,20 @@ class OptionMarket:
         return account_tag
 
     @staticmethod
+    # @time_it
     def _get_market_prices(ib, contracts):
-        tickers = ib.reqTickers(*contracts)
+
+        # tickers = ib.reqTickers(*contracts)
+
+        # Alternative to get live tickers
+        for contract in contracts:
+            ib.reqMktData(contract, '', False, False)
+
+        # print('Waiting for tickers')
+        ib.sleep(1)
+        tickers = [ib.ticker(contract) for contract in contracts]
+        # print(tickers)
+
         mkt_prices = [ticker.last if ticker.marketPrice() == ticker.close else ticker.marketPrice()
                       for ticker in tickers]
         if any([True for item in mkt_prices if isNan(item)]):

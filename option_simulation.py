@@ -6,20 +6,16 @@ Created on Thu Mar 29 14:19:37 2018
 @author: macbook2
 """
 
-import os
-import re
 import pandas as pd
 import numpy as np
 import feather
-from time import time
-from pathlib import Path
-from option_utilities import get_live_option_expiries, USZeroYieldCurve, get_theoretical_strike, read_feather
-from spx_data_update import UpdateSP500Data, get_dates
 import pyfolio as pf
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-import matplotlib.dates as mdates
 from matplotlib.ticker import FormatStrFormatter
+from pathlib import Path
+from option_utilities import get_live_option_expiries, USZeroYieldCurve, get_theoretical_strike, read_feather
+from spx_data_update import UpdateSP500Data, get_dates
 
 
 class OptionSimulation:
@@ -34,6 +30,7 @@ class OptionSimulation:
         file_names = {'spot': 'sp500_close', 'sigma': 'vix_index', 'dividend_yield': 'sp500_dividend_yld'}
         self.sim_param = self.get_simulation_parameters(UpdateSP500Data.TOP_LEVEL_PATH, file_names)
         self.trade_dates = None
+        self.expiration_actual = None
         # Simulation dates depend depend on availability of zero rates
         last_zero_date = self.usZeroYldCurve.zero_yields.index[-1]
         self.sim_dates_all = self.sim_param.index[self.sim_param.index <= last_zero_date]
@@ -44,32 +41,36 @@ class OptionSimulation:
             # Add pre-cooked trade date recipes here
             month_diff = self.sim_dates_all.month[1:] - self.sim_dates_all.month[0:-1]
             eom_trade_dates = self.sim_dates_all[np.append(month_diff.values.astype(bool), False)]
+            mon3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3MON')
+            tue3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3TUE')
+            wed3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3WED')
             thu3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3THU')
+            fri3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3FRI')
 
             # Use dictionnary as switch case
             def select_trade_date_type(x):
                 return {
                     'EOM': eom_trade_dates,
-                    'THU3': thu3_trade_dates
+                    '3MON': mon3_trade_dates,
+                    '3TUE': tue3_trade_dates,
+                    '3WED': wed3_trade_dates,
+                    '3THU': thu3_trade_dates,
+                    '3FRI': fri3_trade_dates
                     }.get(x, 9)
             trade_dates = select_trade_date_type(trade_type)
             trade_dates = pd.DatetimeIndex(trade_dates.date)
 
         # Check all trade dates are part of self.sim_dates_all
-        missing_dates = []
+            trade_dates = self.get_previous_business_day(self.sim_dates_all, trade_dates)
+        assert any(trade_dates.intersection(self.sim_dates_all) == trade_dates), \
+            'Trade dates are not a subset of simulation dates'
 
-        for dts in trade_dates:
-            if dts not in self.sim_dates_all:
-                missing_dates.append(dts)
-
-        assert not missing_dates, 'Trade dates are not a subset of simulation dates'
         return trade_dates
 
     def _get_expiration_dates(self, option_duration_months):
         '''Create expiration dates based on trade dates and number of expiry months'''
         # TODO: Generalize for option_duration_days
-        expiration_theoretical = self.trade_dates + \
-                                  pd.Timedelta(option_duration_months, unit='M')
+        expiration_theoretical = self.trade_dates + pd.Timedelta(option_duration_months, unit='M')
         expiration_theoretical = pd.DatetimeIndex(expiration_theoretical.date)
         expiration_actual, available_expiries = get_live_option_expiries(expiration_theoretical,
                                                                           self.trade_dates,
@@ -88,35 +89,27 @@ class OptionSimulation:
 
         trade_model_inputs = self.sim_param.loc[self.trade_dates]
 
-
         self.expiration_actual = self._get_expiration_dates(option_duration_months)
 
         zero_yields = self.usZeroYldCurve.get_zero_4dates(as_of_dates=self.trade_dates,
                                                           maturity_dates=self.expiration_actual,
                                                           date_adjust=True)
-        zero_yields = zero_yields.rename('zeros')
+
+        zero_yields = pd.Series(data=zero_yields, index=self.trade_dates, name='zeros')
         zero_yields = pd.concat([zero_yields,
                                  pd.Series(data=self.expiration_actual, index=zero_yields.index,
                                            name='expiration_date')], axis=1)
+
         trade_model_inputs[zero_yields.columns] = zero_yields
         spot_price = trade_model_inputs.loc[:, 'sp500_close'].values
         dividend_yield = trade_model_inputs.loc[:, 'Yield Value'].values / 100
         sigma = trade_model_inputs.loc[:, 'vix_index'].values / 100
         risk_free = trade_model_inputs.loc[:, 'zeros'].values / 100
-        option_strikes_theoretical = []
-        # for counter in range(0, len(spot_price)):
-        #     option_strike_theoretical = get_theoretical_strike((self.trade_dates[counter], ),
-        #                                                        (self.expiration_actual[counter], ),
-        #                                                         spot_price[counter], risk_free[counter], zscore,
-        #                                                         dividend_yield[counter], sigma[counter])
-        #     option_strikes_theoretical.append(option_strike_theoretical.flatten())
         option_strikes_theoretical = get_theoretical_strike(self.trade_dates,
                                                             self.expiration_actual,
-                                                            spot_price, risk_free, zscore,
+                                                            spot_price, risk_free, [zscore],
                                                             dividend_yield, sigma)
 
-        option_strikes_theoretical = np.array(option_strikes_theoretical)
-        # self.trade_model_inputs = trade_model_inputs
         trade_model_inputs['strike_theoretical'] = option_strikes_theoretical
 
         sim_dates_live = pd.date_range(self.trade_dates[0], self.sim_dates_all[-1], freq='B')
@@ -142,8 +135,7 @@ class OptionSimulation:
             # Create empty data frame
             df_out = pd.DataFrame(np.nan, index=date_slice, columns=self.COL_NAMES
                                   + self.GREEK_COL_NAMES)
-
-            # loop through date_slice
+            # loop through each day within a date_slice
             for dts in date_slice:
                 dtf = feather.read_dataframe(str(self.feather_directory) +
                                              '/UnderlyingOptionsEODCalcs_' +
@@ -167,18 +159,17 @@ class OptionSimulation:
                 zero_rate = self.usZeroYldCurve.get_zero_4dates(as_of_dates=dts,
                                                                 maturity_dates=expiry_date,
                                                                 date_adjust=True) / 100
-
-                df_out.loc[dts, 'zero'] = zero_rate.iloc[0]
+                df_out.loc[dts, 'zero'] = zero_rate
                 df_out.loc[dts, 'strike_traded'] = strike_traded
                 df_out.loc[dts, 'days_2_exp'] = days2exp.days
                 df_out.loc[dts, 'strike_theo'] = strike_theo
                 df_out.loc[dts, 'bid_1545'] = option_trade_data[option_trade_data['strike'] ==
-                                              strike_traded]['bid_1545'].iloc[0]
+                                                                strike_traded]['bid_1545'].iloc[0]
                 df_out.loc[dts, 'ask_1545'] = option_trade_data[option_trade_data['strike'] ==
-                                              strike_traded]['ask_1545'].iloc[0]
+                                                                strike_traded]['ask_1545'].iloc[0]
 
                 df_out.loc[dts, self.GREEK_COL_NAMES] = option_trade_data[option_trade_data['strike'] ==
-                                              strike_traded][self.GREEK_COL_NAMES].iloc[0]
+                                                                          strike_traded][self.GREEK_COL_NAMES].iloc[0]
             dtf_trades.append(df_out)
         return dtf_trades, zscore, sim_dates_live
 
@@ -203,6 +194,14 @@ class OptionSimulation:
 
         return out_df
 
+    @staticmethod
+    def get_previous_business_day(super_set: pd.DatetimeIndex, sub_set: pd.DatetimeIndex):
+        diff = sub_set.difference(super_set)
+        while len(diff) > 0:
+            new_dates = diff - pd.tseries.offsets.BDay(1)
+            sub_set = new_dates.union(sub_set.intersection(super_set))
+            diff = sub_set.difference(super_set)
+        return sub_set
 
 class OptionTrades:
     def __init__(self, dtf_trades, zscore, sim_dates_live, leverage: float):
@@ -325,6 +324,9 @@ class OptionTrades:
 
         for items in (ax_yearly.get_yticklabels() + ax_heatmap.get_yticklabels()):
             items.set_fontsize(font_size - 5)
-        if fig_path.is_dir():
-            plt.savefig(fig_path + 'heat_map', dpi=600, bbox_inches='tight', transparent=True)
-        return fig
+        if fig_path is not None:
+            if Path.is_dir(fig_path):
+                plt.savefig(fig_path + 'heat_map', dpi=600, bbox_inches='tight', transparent=True)
+            return fig
+
+
