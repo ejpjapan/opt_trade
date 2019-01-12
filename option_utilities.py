@@ -210,7 +210,7 @@ class USZeroYieldCurve:
             end_time = time()
             print('File updated in ' + str(round(end_time-start_time)) + ' seconds')
         except:
-            print('Zero curve update failed - Zero curve no updated')
+            print('Zero curve update failed - Zero curve not updated')
 
     def cash_index(self):
         """Daily Cash return index based on monthly investment in a 3-month t-bill"""

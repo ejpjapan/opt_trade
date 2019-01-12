@@ -34,6 +34,8 @@ class OptionSimulation:
         # Simulation dates depend depend on availability of zero rates
         last_zero_date = self.usZeroYldCurve.zero_yields.index[-1]
         self.sim_dates_all = self.sim_param.index[self.sim_param.index <= last_zero_date]
+        self.option_type = None
+        self.trade_day = None
 
     def _get_trade_dates(self, trade_dates=None, trade_type='EOM'):
         """Create trade dates datetime index"""
@@ -79,13 +81,15 @@ class OptionSimulation:
         return expiration_actual
 
     def trade_sim(self, zscore, option_duration_months, option_type='P',
-                  trade_dates=None, trade_type='EOM'):
+                  trade_dates=None, trade_day='EOM'):
+        self.option_type = option_type
+        self.trade_day = trade_day
         '''Run option simulation'''
-        print('Running Simulation:Zscore ' + str(zscore) +' Duration '
-              + str(option_duration_months))
+        print('Running Simulation: Z-score ' + str(zscore) + ' | Duration '
+              + str(option_duration_months) + ' | Option Type:{}'.format(self.option_type))
 
         self.trade_dates = self._get_trade_dates(trade_dates,
-                                                 trade_type)
+                                                 self.trade_day)
 
         trade_model_inputs = self.sim_param.loc[self.trade_dates]
 
@@ -205,11 +209,12 @@ class OptionSimulation:
 
 
 class OptionTrades:
-    def __init__(self, dtf_trades, zscore, sim_dates_live, leverage: float):
+    def __init__(self, dtf_trades, zscore, sim_dates_live, leverage: float, option_type: str, trade_day: str):
         self.dtf_trades = dtf_trades
         self.zscore = zscore
         self.sim_dates_live = sim_dates_live
-
+        self.option_type = option_type
+        self.trade_day = trade_day
         if np.isscalar(leverage):
             self.leverage = pd.Series(leverage, self.sim_dates_live)
         else:
@@ -247,8 +252,9 @@ class OptionTrades:
         returns_arithmetic = pd.concat(return_list_arithmetic)
         return returns_geometric, returns_arithmetic
 
-    def get_greeks(self):
-        '''Get trade simlution greeks'''
+    @property
+    def greeks(self):
+        """Get trade simulation greeks"""
         greeks_list = []
         for item in self.dtf_trades:
             # Greeks are 1 to n-1
@@ -265,41 +271,38 @@ class OptionTrades:
         greeks.loc[:, greek_col_bool] = greek_columns
         return greeks
 
-    def get_strikes(self):
-        '''Get trade simulation strikes'''
+    @property
+    def strikes(self):
+        """Get trade simulation strikes"""
         strike_list = []
         for item in self.dtf_trades:
             strike_list.append(item['strike_traded'].iloc[:-1].astype(np.float64))
         return pd.concat(strike_list)
 
-    def get_days_2_expiry(self):
-        '''Get trade days 2 expiry'''
+    @property
+    def days_2_expiry(self):
+        """Get trade simulation days 2 expiry"""
         days_list = []
         for item in self.dtf_trades:
             # Greeks are 1 to n-1
             days_list.append(item['days_2_exp'].iloc[:-1].astype(np.float64))
         return pd.concat(days_list)
 
+    @property
     def performance(self):
+        """Get simulation performance"""
         performance = pf.timeseries.perf_stats(self.returns[1])
         perf_index = list(performance.index)
-        performance['Leverage'] = self.leverage.mean()
-        performance['ZScore'] = self.zscore
-        performance['StartDate'] = self.returns[1].index[0].strftime('%b-%d, %Y')
-        performance['EndDate'] = self.returns[1].index[-1].strftime('%b-%d, %Y')
-        performance['Avg_Days'] = self.get_days_2_expiry().mean()
+        performance['StartDate'], performance['EndDate'] = list(self.returns[1].index[[0, -1]].strftime('%b %d, %Y'))
+        performance['Leverage'], performance['ZScore'], performance['Avg_Days'] = [self.leverage.mean(), self.zscore,
+                                                                                   self.days_2_expiry.mean()]
         performance = performance.reindex(['StartDate', 'EndDate', 'Leverage', 'ZScore', 'Avg_Days'] + perf_index)
-        performance = performance.append(self.get_greeks().mean())
+        performance = performance.append(self.greeks.mean())
+        performance = performance.rename('{}{}{}L{}'.format(self.trade_day, self.option_type, self.zscore,
+                                                            self.leverage.mean()))
         performance = performance.to_frame()
+
         return performance
-
-    # def strategy_name(self):
-    #
-    #     return strat_name
-
-    @staticmethod
-    def get_column(col_head):
-        return [i for i in OptionSimulation.GREEK_COL_NAMES if not (i.find('col_head'))]
 
     @staticmethod
     def plot_performance_quad(returns, fig_path=None, font_size=20):

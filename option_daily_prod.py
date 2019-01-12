@@ -215,7 +215,7 @@ class TradeChoice:
 
     @staticmethod
     def _format_index(df_in):
-        df_out = df_in.set_index(df_in.index.strftime('%Y.%m.%e'))
+        df_out = df_in.set_index(df_in.index.strftime('%Y.%m.%d'))
         return df_out
 
 class OptionMarket:
