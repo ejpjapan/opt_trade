@@ -85,7 +85,7 @@ class OptionSimulation:
         self.option_type = option_type
         self.trade_day = trade_day
         '''Run option simulation'''
-        print('Running Simulation: Z-score ' + str(zscore) + ' | Duration '
+        print('Running Simulation: trade_day:' + self.trade_day + '|Z-score ' + str(zscore) + ' | Duration '
               + str(option_duration_months) + ' | Option Type:{}'.format(self.option_type))
 
         self.trade_dates = self._get_trade_dates(trade_dates,
@@ -175,7 +175,8 @@ class OptionSimulation:
                 df_out.loc[dts, self.GREEK_COL_NAMES] = option_trade_data[option_trade_data['strike'] ==
                                                                           strike_traded][self.GREEK_COL_NAMES].iloc[0]
             dtf_trades.append(df_out)
-        return dtf_trades, zscore, sim_dates_live
+            sim_output = SimulationParameters(dtf_trades, zscore, sim_dates_live, option_type, trade_day)
+        return sim_output
 
     @staticmethod
     def get_simulation_parameters(input_path, file_names):
@@ -208,21 +209,32 @@ class OptionSimulation:
         return sub_set
 
 
-class OptionTrades:
-    def __init__(self, dtf_trades, zscore, sim_dates_live, leverage: float, option_type: str, trade_day: str):
+class SimulationParameters:
+    def __init__(self, dtf_trades, zscore, sim_dates_live, option_type: str, trade_day: str):
         self.dtf_trades = dtf_trades
         self.zscore = zscore
         self.sim_dates_live = sim_dates_live
         self.option_type = option_type
         self.trade_day = trade_day
+
+
+class OptionTrades:
+    def __init__(self, sim_output: SimulationParameters, leverage: float):
+        self.simulation_parameters = sim_output
+        # self.dtf_trades = dtf_trades
+        #self.zscore = zscore
+        # self.sim_dates_live = sim_dates_live
+        # self.option_type = option_type
+        # self.trade_day = trade_day
         if np.isscalar(leverage):
-            self.leverage = pd.Series(leverage, self.sim_dates_live)
+            self.leverage = pd.Series(leverage, self.simulation_parameters.sim_dates_live)
         else:
             self.leverage = leverage
         self.returns = self.sell_option()
 
     def sell_option(self, trade_mid=True):
-        for i, item in enumerate(self.dtf_trades):
+        dtf_trades = self.simulation_parameters.dtf_trades
+        for i, item in enumerate(dtf_trades):
             item['discount'] = item['days_2_exp'] / 365 * - item['zero']
             item['discount'] = item['discount'].map(np.exp)
             if trade_mid:
@@ -240,11 +252,11 @@ class OptionTrades:
                                                             axis=0).astype(np.float64)
             premium_diff.iloc[0] = item['equity_capital'].iloc[0]
             item['return_geometric'] = np.log(item['return_arithmetic'].astype(np.float64) + 1)
-        self.dtf_trades[i] = item
+        dtf_trades[i] = item
 
         return_list_geometric = []
         return_list_arithmetic = []
-        for item in self.dtf_trades:
+        for item in dtf_trades:
             return_list_geometric.append(item['return_geometric'].dropna())
             return_list_arithmetic.append(item['return_arithmetic'].dropna())
 
@@ -256,7 +268,7 @@ class OptionTrades:
     def greeks(self):
         """Get trade simulation greeks"""
         greeks_list = []
-        for item in self.dtf_trades:
+        for item in self.simulation_parameters.dtf_trades:
             # Greeks are 1 to n-1
             greeks_list.append(item[OptionSimulation.GREEK_COL_NAMES].iloc[:-1].astype(np.float64))
         # Need to add greeks for last day of simulation
@@ -275,7 +287,7 @@ class OptionTrades:
     def strikes(self):
         """Get trade simulation strikes"""
         strike_list = []
-        for item in self.dtf_trades:
+        for item in self.simulation_parameters.dtf_trades:
             strike_list.append(item['strike_traded'].iloc[:-1].astype(np.float64))
         return pd.concat(strike_list)
 
@@ -283,7 +295,7 @@ class OptionTrades:
     def days_2_expiry(self):
         """Get trade simulation days 2 expiry"""
         days_list = []
-        for item in self.dtf_trades:
+        for item in self.simulation_parameters.dtf_trades:
             # Greeks are 1 to n-1
             days_list.append(item['days_2_exp'].iloc[:-1].astype(np.float64))
         return pd.concat(days_list)
@@ -294,11 +306,14 @@ class OptionTrades:
         performance = pf.timeseries.perf_stats(self.returns[1])
         perf_index = list(performance.index)
         performance['StartDate'], performance['EndDate'] = list(self.returns[1].index[[0, -1]].strftime('%b %d, %Y'))
-        performance['Leverage'], performance['ZScore'], performance['Avg_Days'] = [self.leverage.mean(), self.zscore,
+        performance['Leverage'], performance['ZScore'], performance['Avg_Days'] = [self.leverage.mean(),
+                                                                                   self.simulation_parameters.zscore,
                                                                                    self.days_2_expiry.mean()]
         performance = performance.reindex(['StartDate', 'EndDate', 'Leverage', 'ZScore', 'Avg_Days'] + perf_index)
         performance = performance.append(self.greeks.mean())
-        performance = performance.rename('{}{}{}L{}'.format(self.trade_day, self.option_type, self.zscore,
+        performance = performance.rename('{}{}{}L{}'.format(self.simulation_parameters.trade_day,
+                                                            self.simulation_parameters.option_type,
+                                                            self.simulation_parameters.zscore,
                                                             self.leverage.mean()))
         performance = performance.to_frame()
 
