@@ -100,7 +100,7 @@ class OptionSimulation:
         expiration_actual, available_expiries = get_actual_option_expiries(expiration_theoretical,
                                                                            trade_dates,
                                                                            str(self.feather_directory) +
-                                                                         '/UnderlyingOptionsEODCalcs_')
+                                                                           '/UnderlyingOptionsEODCalcs_')
         return expiration_actual
 
     def trade_sim(self, zscore, option_duration_months, option_type='P',
