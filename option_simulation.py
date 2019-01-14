@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.ticker import FormatStrFormatter
 from pathlib import Path
-from option_utilities import get_live_option_expiries, USZeroYieldCurve, get_theoretical_strike, read_feather
+from option_utilities import get_actual_option_expiries, USZeroYieldCurve, get_theoretical_strike, read_feather
 from spx_data_update import UpdateSP500Data, get_dates
 
 
@@ -29,77 +29,99 @@ class OptionSimulation:
         self.usZeroYldCurve = USZeroYieldCurve()
         file_names = {'spot': 'sp500_close', 'sigma': 'vix_index', 'dividend_yield': 'sp500_dividend_yld'}
         self.sim_param = self.get_simulation_parameters(UpdateSP500Data.TOP_LEVEL_PATH, file_names)
-        self.trade_dates = None
         self.expiration_actual = None
         # Simulation dates depend depend on availability of zero rates
         last_zero_date = self.usZeroYldCurve.zero_yields.index[-1]
         self.sim_dates_all = self.sim_param.index[self.sim_param.index <= last_zero_date]
         self.option_type = None
-        self.trade_day = None
+        # self.trade_day = None
 
-    def _get_trade_dates(self, trade_dates=None, trade_type='EOM'):
-        """Create trade dates datetime index"""
-        if trade_dates is None:
-            # Add pre-cooked trade date recipes here
-            month_diff = self.sim_dates_all.month[1:] - self.sim_dates_all.month[0:-1]
-            eom_trade_dates = self.sim_dates_all[np.append(month_diff.values.astype(bool), False)]
-            mon3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3MON')
-            tue3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3TUE')
-            wed3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3WED')
-            thu3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3THU')
-            fri3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3FRI')
+    # def _get_trade_dates(self, trade_type='EOM'):
+    #     """Create trade dates datetime index"""
+    #         # Add pre-cooked trade date recipes here
+    #     month_diff = self.sim_dates_all.month[1:] - self.sim_dates_all.month[0:-1]
+    #     eom_trade_dates = self.sim_dates_all[np.append(month_diff.values.astype(bool), False)]
+    #
+    #     # business_days_range = range(0, 22, 1)
+    #     #
+    #     # shifted_trade_dates = [self.sim_dates_all[item::22] for item in business_days_range]
+    #
+    #     mon3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3MON')
+    #     tue3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3TUE')
+    #     wed3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3WED')
+    #     thu3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3THU')
+    #     fri3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3FRI')
+    #
+    #     # Use dictionnary as switch case
+    #     def select_trade_date_type(x):
+    #         return {
+    #             'EOM': eom_trade_dates,
+    #             '3MON': mon3_trade_dates,
+    #             '3TUE': tue3_trade_dates,
+    #             '3WED': wed3_trade_dates,
+    #             '3THU': thu3_trade_dates,
+    #             '3FRI': fri3_trade_dates
+    #             }.get(x, 9)
+    #     trade_dates = select_trade_date_type(trade_type)
+    #     trade_dates = pd.DatetimeIndex(trade_dates.date)
+    #
+    #     # Check all trade dates are part of self.sim_dates_all
+    #     trade_dates = self.get_previous_business_day(self.sim_dates_all, trade_dates)
+    #     assert any(trade_dates.intersection(self.sim_dates_all) == trade_dates), \
+    #         'Trade dates are not a subset of simulation dates'
+    #
+    #     return trade_dates
 
-            # Use dictionnary as switch case
+    def _get_trade_dates(self, trade_type='EOM'):
+        # Add pre-cooked trade date recipes here
+        month_diff = self.sim_dates_all.month[1:] - self.sim_dates_all.month[0:-1]
+        eom_trade_dates = self.sim_dates_all[np.append(month_diff.values.astype(bool), False)]
+        if isinstance(trade_type, str):
             def select_trade_date_type(x):
                 return {
                     'EOM': eom_trade_dates,
-                    '3MON': mon3_trade_dates,
-                    '3TUE': tue3_trade_dates,
-                    '3WED': wed3_trade_dates,
-                    '3THU': thu3_trade_dates,
-                    '3FRI': fri3_trade_dates
-                    }.get(x, 9)
+                }.get(x, 9)
             trade_dates = select_trade_date_type(trade_type)
             trade_dates = pd.DatetimeIndex(trade_dates.date)
+        elif isinstance(trade_type, tuple):
+            assert len(trade_type) == 2
+            assert trade_type[0] < trade_type[-1]
+            trade_dates = self.sim_dates_all[trade_type[0]::trade_type[-1]]
 
-        # Check all trade dates are part of self.sim_dates_all
-            trade_dates = self.get_previous_business_day(self.sim_dates_all, trade_dates)
         assert any(trade_dates.intersection(self.sim_dates_all) == trade_dates), \
             'Trade dates are not a subset of simulation dates'
-
         return trade_dates
 
-    def _get_expiration_dates(self, option_duration_months):
+    def _get_expiration_dates(self, option_duration_months, trade_dates):
         '''Create expiration dates based on trade dates and number of expiry months'''
         # TODO: Generalize for option_duration_days
-        expiration_theoretical = self.trade_dates + pd.Timedelta(option_duration_months, unit='M')
+        expiration_theoretical = trade_dates + pd.Timedelta(option_duration_months, unit='M')
         expiration_theoretical = pd.DatetimeIndex(expiration_theoretical.date)
-        expiration_actual, available_expiries = get_live_option_expiries(expiration_theoretical,
-                                                                          self.trade_dates,
-                                                                          str(self.feather_directory) +
+        expiration_actual, available_expiries = get_actual_option_expiries(expiration_theoretical,
+                                                                           trade_dates,
+                                                                           str(self.feather_directory) +
                                                                          '/UnderlyingOptionsEODCalcs_')
         return expiration_actual
 
     def trade_sim(self, zscore, option_duration_months, option_type='P',
-                  trade_dates=None, trade_day='EOM'):
+                  trade_day_type='EOM'):
         self.option_type = option_type
-        self.trade_day = trade_day
+
         '''Run option simulation'''
-        print('Running Simulation: trade_day:' + self.trade_day + '|Z-score ' + str(zscore) + ' | Duration '
-              + str(option_duration_months) + ' | Option Type:{}'.format(self.option_type))
+        print('Running Simulation - trade_day_type:' + str(trade_day_type) + ' | Z-score ' + str(zscore) + ' | Duration '
+              + str(option_duration_months) + ' | Option Type:{}'.format(option_type))
 
-        self.trade_dates = self._get_trade_dates(trade_dates,
-                                                 self.trade_day)
+        trade_dates = self._get_trade_dates(trade_day_type)
 
-        trade_model_inputs = self.sim_param.loc[self.trade_dates]
+        trade_model_inputs = self.sim_param.loc[trade_dates]
 
-        self.expiration_actual = self._get_expiration_dates(option_duration_months)
+        self.expiration_actual = self._get_expiration_dates(option_duration_months, trade_dates)
 
-        zero_yields = self.usZeroYldCurve.get_zero_4dates(as_of_dates=self.trade_dates,
+        zero_yields = self.usZeroYldCurve.get_zero_4dates(as_of_dates=trade_dates,
                                                           maturity_dates=self.expiration_actual,
                                                           date_adjust=True)
 
-        zero_yields = pd.Series(data=zero_yields, index=self.trade_dates, name='zeros')
+        zero_yields = pd.Series(data=zero_yields, index=trade_dates, name='zeros')
         zero_yields = pd.concat([zero_yields,
                                  pd.Series(data=self.expiration_actual, index=zero_yields.index,
                                            name='expiration_date')], axis=1)
@@ -109,14 +131,14 @@ class OptionSimulation:
         dividend_yield = trade_model_inputs.loc[:, 'Yield Value'].values / 100
         sigma = trade_model_inputs.loc[:, 'vix_index'].values / 100
         risk_free = trade_model_inputs.loc[:, 'zeros'].values / 100
-        option_strikes_theoretical = get_theoretical_strike(self.trade_dates,
+        option_strikes_theoretical = get_theoretical_strike(trade_dates,
                                                             self.expiration_actual,
                                                             spot_price, risk_free, [zscore],
                                                             dividend_yield, sigma)
 
         trade_model_inputs['strike_theoretical'] = option_strikes_theoretical
 
-        sim_dates_live = pd.date_range(self.trade_dates[0], self.sim_dates_all[-1], freq='B')
+        sim_dates_live = pd.date_range(trade_dates[0], self.sim_dates_all[-1], freq='B')
         sim_dates_live = sim_dates_live.intersection(self.sim_dates_all)
 
         # Simulation date cannot go beyond last expiry
@@ -126,15 +148,15 @@ class OptionSimulation:
 
         dtf_trades = []
 
-        for i, trade_dt in enumerate(self.trade_dates):
+        for i, trade_dt in enumerate(trade_dates):
             # Get date slice between two trading dates
-            start_idx = sim_dates_live.get_loc(self.trade_dates[i])
+            start_idx = sim_dates_live.get_loc(trade_dates[i])
 
-            if trade_dt == self.trade_dates[-1]:
+            if trade_dt == trade_dates[-1]:
                 # last date slice is to end of simulation period
                 date_slice = sim_dates_live[start_idx:]
             else:
-                end_idx = sim_dates_live.get_loc(self.trade_dates[i+1]) + 1
+                end_idx = sim_dates_live.get_loc(trade_dates[i+1]) + 1
                 date_slice = sim_dates_live[start_idx:end_idx]
             # Create empty data frame
             df_out = pd.DataFrame(np.nan, index=date_slice, columns=self.COL_NAMES
@@ -175,7 +197,7 @@ class OptionSimulation:
                 df_out.loc[dts, self.GREEK_COL_NAMES] = option_trade_data[option_trade_data['strike'] ==
                                                                           strike_traded][self.GREEK_COL_NAMES].iloc[0]
             dtf_trades.append(df_out)
-            sim_output = SimulationParameters(dtf_trades, zscore, sim_dates_live, option_type, trade_day)
+            sim_output = SimulationParameters(dtf_trades, zscore, sim_dates_live, option_type, str(trade_day_type))
         return sim_output
 
     @staticmethod
@@ -210,27 +232,22 @@ class OptionSimulation:
 
 
 class SimulationParameters:
-    def __init__(self, dtf_trades, zscore, sim_dates_live, option_type: str, trade_day: str):
+    def __init__(self, dtf_trades, zscore, sim_dates_live, option_type: str, trade_day_type: str):
         self.dtf_trades = dtf_trades
         self.zscore = zscore
         self.sim_dates_live = sim_dates_live
         self.option_type = option_type
-        self.trade_day = trade_day
+        self.trade_day_type = trade_day_type
 
 
 class OptionTrades:
     def __init__(self, sim_output: SimulationParameters, leverage: float):
         self.simulation_parameters = sim_output
-        # self.dtf_trades = dtf_trades
-        #self.zscore = zscore
-        # self.sim_dates_live = sim_dates_live
-        # self.option_type = option_type
-        # self.trade_day = trade_day
         if np.isscalar(leverage):
             self.leverage = pd.Series(leverage, self.simulation_parameters.sim_dates_live)
         else:
             self.leverage = leverage
-        self.returns = self.sell_option()
+        self.all_returns = self.sell_option()
 
     def sell_option(self, trade_mid=True):
         dtf_trades = self.simulation_parameters.dtf_trades
@@ -301,20 +318,38 @@ class OptionTrades:
         return pd.concat(days_list)
 
     @property
-    def performance(self):
+    def returns(self):
+        """Return daily arithmetic returns"""
+        returns_out = self.all_returns[-1].rename(self.strategy_name)
+        return returns_out.to_frame()
+
+    @property
+    def strategy_name(self):
+        strategy_name = '{}{}{}L{}'.format(self.simulation_parameters.trade_day_type,
+                                           self.simulation_parameters.option_type,
+                                           self.simulation_parameters.zscore,
+                                           self.leverage.mean())
+        return strategy_name
+
+    @property
+    def trade_dates(self):
+        simulation_trade_dates = [item.index[0] for item in self.simulation_parameters.dtf_trades]
+        return pd.DatetimeIndex(simulation_trade_dates)
+
+    @property
+    def performance_summary(self):
         """Get simulation performance"""
-        performance = pf.timeseries.perf_stats(self.returns[1])
+        # convert returns to series for pyfolio function
+        performance = pf.timeseries.perf_stats(self.returns[self.returns.columns[0]])
         perf_index = list(performance.index)
-        performance['StartDate'], performance['EndDate'] = list(self.returns[1].index[[0, -1]].strftime('%b %d, %Y'))
+        performance['StartDate'], performance['EndDate'] = list(self.simulation_parameters.sim_dates_live[[0, -1]]
+                                                                .strftime('%b %d, %Y'))
         performance['Leverage'], performance['ZScore'], performance['Avg_Days'] = [self.leverage.mean(),
                                                                                    self.simulation_parameters.zscore,
                                                                                    self.days_2_expiry.mean()]
         performance = performance.reindex(['StartDate', 'EndDate', 'Leverage', 'ZScore', 'Avg_Days'] + perf_index)
         performance = performance.append(self.greeks.mean())
-        performance = performance.rename('{}{}{}L{}'.format(self.simulation_parameters.trade_day,
-                                                            self.simulation_parameters.option_type,
-                                                            self.simulation_parameters.zscore,
-                                                            self.leverage.mean()))
+        performance = performance.rename(self.strategy_name)
         performance = performance.to_frame()
 
         return performance

@@ -48,7 +48,9 @@ def third_fridays(dts, num_dts):
         result.append(next_third_friday(result[-1]))
     return result
 
-def get_live_option_expiries(expiry_dates_theo, trade_dates, in_dir):
+
+# @time_it
+def get_actual_option_expiries(expiry_dates_theo, trade_dates, in_dir):
     """retrieve available option expiries given theoretical expiries and trade_dates"""
     expiry_dates_actual = []
     all_available_expiry = []
