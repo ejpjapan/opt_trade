@@ -218,6 +218,7 @@ class TradeChoice:
         df_out = df_in.set_index(df_in.index.strftime('%Y.%m.%d'))
         return df_out
 
+
 class OptionMarket:
     """IB Interface class that fetches data from IB to pass to trade choice object
 
