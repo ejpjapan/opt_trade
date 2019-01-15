@@ -71,9 +71,12 @@ class GetRawCBOEOptionData:
         """Unzip files to csv """
         for item in os.listdir(in_directory):  # loop through items in dir
             if item.endswith('.zip'):
-                file_name = os.path.abspath(in_directory / item)  # get full path of files
+                file_name = in_directory / item  # get full path of files
                 zip_ref = zipfile.ZipFile(file_name)  # create zipfile object
-                zip_ref.extractall(out_directory)  # extract file to dir
+                try:
+                    zip_ref.extractall(out_directory)  # extract file to dir
+                except zipfile.BadZipFile as err:
+                    print("Zipfile error: {0} for {1}".format(err, item))
                 zip_ref.close()  # close file
 
     def __get_zip_files(self, output_directory, order_string):
@@ -99,22 +102,19 @@ class GetRawCBOEOptionData:
          :rtype: Bool"""
         feather_directory = self.top_level_directory / 'feather'
         assert(feather_directory.is_dir())
+        assert temporary_file_directory.is_dir(), '{} directory does not exist'.format(temporary_file_directory)
         latest_business_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(1)
         opt_dates_all = get_dates(feather_directory)
-        try:
-            if opt_dates_all[-1].date() != latest_business_date.date():
-                start_time = time()
-                print('Downloading Option data from CBOE')
-                self.get_subscription_files(temporary_file_directory)
-                self.unzip_file(temporary_file_directory, temporary_file_directory)
-                self.csv2feather(temporary_file_directory, feather_directory)
-                end_time = time()
-                files_updated = True
-                print('Option files updated in: ' + str(round(end_time - start_time)) + ' seconds')
-            else:
-                files_updated = False
-                print('Option files not updated')
-        except:
+        if opt_dates_all[-1].date() != latest_business_date.date():
+            start_time = time()
+            print('Downloading Option data from CBOE')
+            self.get_subscription_files(temporary_file_directory)
+            self.unzip_file(temporary_file_directory, temporary_file_directory)
+            self.csv2feather(temporary_file_directory, feather_directory)
+            end_time = time()
+            files_updated = True
+            print('Option files updated in: ' + str(round(end_time - start_time)) + ' seconds')
+        else:
             files_updated = False
             print('Option files not updated')
         return files_updated
