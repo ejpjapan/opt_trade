@@ -59,7 +59,7 @@ def get_actual_option_expiries(expiry_dates_theo, trade_dates, in_dir):
         all_expiration_dates = pd.DatetimeIndex(dtf['expiration'].unique())
         all_expiration_dates = all_expiration_dates.sort_values()
         all_available_expiry.append(all_expiration_dates)
-        expiry_index = all_expiration_dates.get_loc(item, method='ffill')
+        expiry_index = all_expiration_dates.get_loc(item, method='nearest')
         if trade_dates[i] == trade_dates[-1]:
             expiration_date = all_expiration_dates[expiry_index]
         else:

@@ -34,52 +34,35 @@ class OptionSimulation:
         last_zero_date = self.usZeroYldCurve.zero_yields.index[-1]
         self.sim_dates_all = self.sim_param.index[self.sim_param.index <= last_zero_date]
         self.option_type = None
-        # self.trade_day = None
-
-    # def _get_trade_dates(self, trade_type='EOM'):
-    #     """Create trade dates datetime index"""
-    #         # Add pre-cooked trade date recipes here
-    #     month_diff = self.sim_dates_all.month[1:] - self.sim_dates_all.month[0:-1]
-    #     eom_trade_dates = self.sim_dates_all[np.append(month_diff.values.astype(bool), False)]
-    #
-    #     # business_days_range = range(0, 22, 1)
-    #     #
-    #     # shifted_trade_dates = [self.sim_dates_all[item::22] for item in business_days_range]
-    #
-    #     mon3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3MON')
-    #     tue3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3TUE')
-    #     wed3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3WED')
-    #     thu3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3THU')
-    #     fri3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3FRI')
-    #
-    #     # Use dictionnary as switch case
-    #     def select_trade_date_type(x):
-    #         return {
-    #             'EOM': eom_trade_dates,
-    #             '3MON': mon3_trade_dates,
-    #             '3TUE': tue3_trade_dates,
-    #             '3WED': wed3_trade_dates,
-    #             '3THU': thu3_trade_dates,
-    #             '3FRI': fri3_trade_dates
-    #             }.get(x, 9)
-    #     trade_dates = select_trade_date_type(trade_type)
-    #     trade_dates = pd.DatetimeIndex(trade_dates.date)
-    #
-    #     # Check all trade dates are part of self.sim_dates_all
-    #     trade_dates = self.get_previous_business_day(self.sim_dates_all, trade_dates)
-    #     assert any(trade_dates.intersection(self.sim_dates_all) == trade_dates), \
-    #         'Trade dates are not a subset of simulation dates'
-    #
-    #     return trade_dates
 
     def _get_trade_dates(self, trade_type='EOM'):
         # Add pre-cooked trade date recipes here
         month_diff = self.sim_dates_all.month[1:] - self.sim_dates_all.month[0:-1]
         eom_trade_dates = self.sim_dates_all[np.append(month_diff.values.astype(bool), False)]
+        # mon3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3MON')
+        # tue3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3TUE')
+        # wed3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3WED')
+        # thu3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3THU')
+        # fri3_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-3FRI')
+        # mon1_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-1MON')
+        # tue1_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-1TUE')
+        # wed1_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-1WED')
+        # thu1_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-1THU')
+        # fri1_trade_dates = pd.date_range(self.sim_dates_all[0], self.sim_dates_all[-1], freq='WOM-1FRI')
         if isinstance(trade_type, str):
             def select_trade_date_type(x):
                 return {
                     'EOM': eom_trade_dates,
+                    # '3MON': mon3_trade_dates,
+                    # '3TUE': tue3_trade_dates,
+                    # '3WED': wed3_trade_dates,
+                    # '3THU': thu3_trade_dates,
+                    # '3FRI': fri3_trade_dates,
+                    # '1MON': mon1_trade_dates,
+                    # '1TUE': tue1_trade_dates,
+                    # '1WED': wed1_trade_dates,
+                    # '1THU': thu1_trade_dates,
+                    # '1FRI': fri1_trade_dates
                 }.get(x, 9)
             trade_dates = select_trade_date_type(trade_type)
             trade_dates = pd.DatetimeIndex(trade_dates.date)
@@ -189,8 +172,15 @@ class OptionSimulation:
                 df_out.loc[dts, 'strike_traded'] = strike_traded
                 df_out.loc[dts, 'days_2_exp'] = days2exp.days
                 df_out.loc[dts, 'strike_theo'] = strike_theo
+                # DEBUG
+                # print('Strike {0}, theo_strike{1} Trade Date - {2}, Expiration {3} '.format(strike_traded,
+                #                                                                             strike_theo,
+                #                                                                             dts,
+                #                                                                             expiry_date))
+
                 df_out.loc[dts, 'bid_1545'] = option_trade_data[option_trade_data['strike'] ==
                                                                 strike_traded]['bid_1545'].iloc[0]
+
                 df_out.loc[dts, 'ask_1545'] = option_trade_data[option_trade_data['strike'] ==
                                                                 strike_traded]['ask_1545'].iloc[0]
 

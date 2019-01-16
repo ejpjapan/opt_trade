@@ -292,6 +292,30 @@ def quandle_api():
     return pl['Quandl']
 
 
+# import os
+# from pathlib import Path
+# from spx_data_update import UpdateSP500Data
+# import feather
+def feather_clean(in_directory):
+    # in_directory = UpdateSP500Data.TOP_LEVEL_PATH / 'feather'
+    Path.is_dir(in_directory)
+    all_files = os.listdir(in_directory)
+    for item in all_files:
+        if item.endswith('.feather'):
+            # Remove options with strikes at 5$
+            option_df = feather.read_dataframe(in_directory / item)
+            idx = option_df['strike'] == 5
+            option_df = option_df.drop(option_df.index[idx])
+            # # Remove Quarterly options
+            # idx2 = option_df['root'] == 'SPXQ'
+            # option_df = option_df.drop(option_df.index[idx2])
+            # # Remove Monthly options
+            # idx2 = option_df['root'] == 'SPXM'
+            # option_df = option_df.drop(option_df.index[idx2])
+            feather.write_dataframe(option_df, str(in_directory / item))
+
+
+
 def main():
     _ = UpdateSP500Data()
 
