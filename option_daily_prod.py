@@ -14,6 +14,7 @@ from spx_data_update import DividendYieldHistory
 from ib_insync.util import isNan
 import time
 
+
 class OptionAsset(ABC):
     def __init__(self, mkt_symbol, vol_symbol, exchange_dict, port=4001, client_id=20):
         """Abstract class for option asset container"""

@@ -59,7 +59,7 @@ def get_actual_option_expiries(expiry_dates_theo, trade_dates, in_dir):
         all_expiration_dates = pd.DatetimeIndex(dtf['expiration'].unique())
         all_expiration_dates = all_expiration_dates.sort_values()
         all_available_expiry.append(all_expiration_dates)
-        expiry_index = all_expiration_dates.get_loc(item, method='nearest')
+        expiry_index = all_expiration_dates.get_loc(item, method='ffill')
         if trade_dates[i] == trade_dates[-1]:
             expiration_date = all_expiration_dates[expiry_index]
         else:
@@ -137,21 +137,23 @@ class USZeroYieldCurve:
     ZERO_URL = 'http://www.federalreserve.gov/econresdata/researchdata/feds200628.xls'
     DB_PATH = Path.home() / 'Library'/ 'Mobile Documents' / 'com~apple~CloudDocs' / 'localDB' / 'xl'
 
-    def __init__(self):
+    def __init__(self, update_data=True):
         self.relative_dates = [relativedelta(days=1), relativedelta(months=3), relativedelta(months=6)] + \
                               [relativedelta(years=x) for x in range(1, 31)]
         fed_zero_feather = Path(self.DB_PATH / 'fedzero.feather')
-        if fed_zero_feather.is_file():
-            # load old file
-            seconds_since_update = time() - fed_zero_feather.stat().st_mtime
-            zero_yields_old = read_feather(str(fed_zero_feather))
-            latest_business_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(1)
-            if zero_yields_old.index[-1].date() != latest_business_date.date():
-                # Check file was updated in last 8 hours
-                if seconds_since_update > (3600 * 8):
-                    self.get_raw_zeros()
-        else:
-            self.get_raw_zeros()
+        if update_data:
+            if fed_zero_feather.is_file():
+                # load old file
+                seconds_since_update = time() - fed_zero_feather.stat().st_mtime
+                zero_yields_old = read_feather(str(fed_zero_feather))
+                latest_business_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(1)
+                if zero_yields_old.index[-1].date() != latest_business_date.date():
+                    # Check file was updated in last 8 hours
+                    if seconds_since_update > (3600 * 8):
+                        self.get_raw_zeros()
+            else:
+                self.get_raw_zeros()
+
         self.zero_yields = read_feather(str(fed_zero_feather))
 
     def get_zero_4dates(self, as_of_dates, maturity_dates, date_adjust):

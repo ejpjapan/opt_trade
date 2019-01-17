@@ -32,7 +32,7 @@ class UpdateSP500Data:
 
         self.ImpliedVol = ImpliedVolatilityHistory()
         self.DividendYieldHistory = DividendYieldHistory()
-        self.usZeroYldCurve = USZeroYieldCurve()
+        self.usZeroYldCurve = USZeroYieldCurve(update_data=True)
         self.ClosingPriceHistory = ClosingPriceHistory(self.TOP_LEVEL_PATH / 'feather')
         self.save_data()
 
