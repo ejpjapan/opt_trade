@@ -10,10 +10,13 @@ import matplotlib.cm as cm
 
 class SPX5MinuteBars:
 
-    def __init__(self, update_bars=True):
+    def __init__(self, update_bars=True, window=500, horizon=50, realized_window=22):
         self.bars = self.spx_bar_history(update_bars)
         self.vol_risk_premium = self.vrp()
         self.har_vol = pd.DataFrame()
+        self.window = window
+        self.horizon = horizon
+        self.realized_window = realized_window
 
     @staticmethod
     def spx_bar_history(update_bars=True):
@@ -50,7 +53,7 @@ class SPX5MinuteBars:
         return vrp
 
     def plot_vol_forecast(self, num_days=10):
-        expected_volatility = self.expected_vol()
+        expected_volatility = self.expected_vol
         fig, ax = plt.subplots(figsize=(12, 5), dpi=80, facecolor='w', edgecolor='k')
 
         for i in range(-1, -(num_days + 1), -1):
@@ -77,15 +80,16 @@ class SPX5MinuteBars:
         daily_vol = daily_vol.rename('rv_daily')
         return daily_vol
 
-    def expected_vol(self, window=500, horizon=50):
+    @property
+    def expected_vol(self):
         """Expected volatility out to 50 days using HAR model"""
         if self.har_vol.empty:
             daily_vol = self.realized_vol()
             series_list = []
-            for i in range(window, len(daily_vol) + 1):
-                am = arch_model(daily_vol[i - window:i], mean='HAR', lags=[1, 5, 22], vol='Constant')
+            for i in range(self.window, len(daily_vol) + 1):
+                am = arch_model(daily_vol[i - self.window:i], mean='HAR', lags=[1, 5, 22], vol='Constant')
                 res = am.fit()
-                forecasts = res.forecast(horizon=horizon)
+                forecasts = res.forecast(horizon=self.horizon)
                 np_vol = forecasts.mean.iloc[-1]
                 series_list.append(np_vol)
             e_vol = pd.concat(series_list, axis=1)
@@ -94,13 +98,15 @@ class SPX5MinuteBars:
             e_vol = self.har_vol
         return e_vol
 
-    def realized_variance(self, window=22):
+    @property
+    def realized_variance(self):
         """Realized variance see VRP literature"""
         realized_quadratic_variation = (self.realized_vol()**2) / 252
-        rv = realized_quadratic_variation.rolling(window).sum()
+        rv = realized_quadratic_variation.rolling(self.realized_window).sum()
         rv = rv.rename('RV_CALC')
         return rv
 
+    @property
     def daily_return(self):
         daily_ret = self.bars['close'].groupby(self.bars.index.date).last().pct_change()
         return daily_ret
