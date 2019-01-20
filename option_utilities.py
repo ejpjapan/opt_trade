@@ -216,6 +216,7 @@ class USZeroYieldCurve:
         except:
             print('Zero curve update failed - Zero curve not updated')
 
+    @property
     def cash_index(self):
         """Daily Cash return index based on monthly investment in a 3-month t-bill"""
         discount_yield = self.zero_yields['DTB3'].resample('BM').ffill()
