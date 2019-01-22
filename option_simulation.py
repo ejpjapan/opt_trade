@@ -386,7 +386,7 @@ class OptionTrades:
             items.set_fontsize(font_size - 5)
         if fig_path is not None:
             if Path.is_dir(fig_path):
-                plt.savefig(fig_path + 'heat_map', dpi=600, bbox_inches='tight', transparent=True)
+                plt.savefig(fig_path + 'heat_map_quad', dpi=600, bbox_inches='tight', transparent=True)
             return fig
 
 
