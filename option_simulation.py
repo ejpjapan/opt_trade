@@ -347,7 +347,7 @@ class OptionTrades:
         return performance
 
     @staticmethod
-    def plot_performance_quad(returns, fig_path=None, font_size=20):
+    def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font_size=20):
 
         fig = plt.figure(figsize=(20, 10))
         gs = gridspec.GridSpec(2, 2, wspace=0.5, hspace=0.5)
@@ -386,7 +386,7 @@ class OptionTrades:
             items.set_fontsize(font_size - 5)
         if fig_path is not None:
             if Path.is_dir(fig_path):
-                plt.savefig(fig_path / 'heat_map_quad', dpi=600, bbox_inches='tight', transparent=True)
+                plt.savefig(fig_path / fig_name, dpi=600, bbox_inches='tight', transparent=True)
             return fig
 
 
