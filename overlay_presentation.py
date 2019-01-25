@@ -15,6 +15,7 @@ def main():
 
     # Assets
     heat_map_path = fig_path / 'heat_map.png'
+    cum_perf_path = fig_path / 'cum_perf.png'
 
     # Layout index
     layout_dict = {'TITLE': 0, 'SUB_TITLE': 1, 'QUOTE': 2, 'TITLE_COLUMN1': 3, 'TITLE_COLUMN2': 4, 'TITLE_COLUMN3': 5,
@@ -31,7 +32,7 @@ def main():
     slide = prs.slides.add_slide(prs.slide_layouts[layout_dict['TITLE_COLUMN1']])
     for shape in slide.placeholders:
         print('%d %s' % (shape.placeholder_format.idx, shape.name))
-    placeholder = slide.placeholders[1]  # idx key, not position
+    # placeholder = slide.placeholders[1]  # idx key, not position
     slide.shapes.title.text = 'Background'
 
     paragraph_strs = [
@@ -57,8 +58,16 @@ def main():
     for shape in slide.placeholders:
         print('%d %s' % (shape.placeholder_format.idx, shape.name))
     placeholder = slide.placeholders[13]  # idx key, not position
-    picture = placeholder.insert_picture(str(heat_map_path))
+    _ = placeholder.insert_picture(str(heat_map_path))
     slide.shapes.title.text = 'Monthly Returns (%)'
+
+    # Third slide
+    slide = prs.slides.add_slide(prs.slide_layouts[layout_dict['BLANK']])
+    for shape in slide.placeholders:
+        print('%d %s' % (shape.placeholder_format.idx, shape.name))
+    placeholder = slide.placeholders[13]  # idx key, not position
+    _ = placeholder.insert_picture(str(cum_perf_path))
+    # slide.shapes.title.text = 'Cumulative Performance'
 
     # Save and open presentation
     prs.save(ppt_path / output_name)
