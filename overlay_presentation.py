@@ -1,7 +1,10 @@
 
 
 from pathlib import Path
+import pandas as pd
 from pptx import Presentation
+from spx_data_update import UpdateSP500Data
+from urllib.request import urlretrieve
 from pptx.util import Inches
 from pptx.enum.text import PP_PARAGRAPH_ALIGNMENT as PP_ALIGN
 import os
@@ -59,15 +62,15 @@ def main():
         print('%d %s' % (shape.placeholder_format.idx, shape.name))
     placeholder = slide.placeholders[13]  # idx key, not position
     _ = placeholder.insert_picture(str(heat_map_path))
-    slide.shapes.title.text = 'Monthly Returns (%)'
+    slide.shapes.title.text = 'Monthly Excess Returns (%)'
 
     # Third slide
-    slide = prs.slides.add_slide(prs.slide_layouts[layout_dict['BLANK']])
+    slide = prs.slides.add_slide(prs.slide_layouts[layout_dict['TITLE_ONLY']])
     for shape in slide.placeholders:
         print('%d %s' % (shape.placeholder_format.idx, shape.name))
     placeholder = slide.placeholders[13]  # idx key, not position
     _ = placeholder.insert_picture(str(cum_perf_path))
-    # slide.shapes.title.text = 'Cumulative Performance'
+    slide.shapes.title.text = 'Cumulative Excess Return'
 
     # Save and open presentation
     prs.save(ppt_path / output_name)
@@ -90,3 +93,34 @@ if __name__ == '__main__':
 
 # for shape in slide.placeholders:
 #     print('%d %s' % (shape.placeholder_format.idx, shape.name))
+
+def aqr_alt_funds(update_funds=True):
+
+    db_directory = UpdateSP500Data.DATA_BASE_PATH / 'xl'
+    url_string = 'https://funds.aqr.com/-/media/files/fund-documents/pricefiles/'
+
+    fund_dict = {'alternative_risk_premia': 'leapmf.xls',
+                 'diversified_arbitrage': 'daf.xls',
+                 'equity_market_neutral': 'emnmf.xls',
+                 'equity_long_short': 'elsmf.xls',
+                 'global_macro': 'gmmf.xls',
+                 'managed_futures': 'mfmf.xls',
+                 'multi_alternative': 'msaf.xls',
+                 'style_premia_alternative': 'spaf.xls'}
+
+    url_dict = {value: url_string + value for (key, value) in fund_dict.items()}
+
+    if update_funds:
+        _ = [urlretrieve(value, db_directory / key) for (key, value) in url_dict.items()]
+
+    rows_to_skip = list(range(0, 15))
+    rows_to_skip.append(16)
+
+    aqr_funds_index = []
+    for key, value in fund_dict.items():
+        df = pd.read_excel(db_directory / value, usecols=[1, 4],
+                           skiprows=rows_to_skip, index_col=0, squeeze=True,
+                           keep_default_na=False)
+        df = df.rename(key)
+        aqr_funds_index.append(df)
+    return pd.concat(aqr_funds_index, axis=1)
