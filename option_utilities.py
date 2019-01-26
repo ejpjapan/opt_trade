@@ -94,17 +94,29 @@ def get_theoretical_strike(trade_dates, expiry_dates, spot_price, risk_free, z_s
     return theoretical_strike
 
 
-def write_feather(dataframe: pd.DataFrame, source: str):
+def write_feather(dataframe: pd.DataFrame, path):
     """ Wrapper function for feather.write_dataframe adds row index as column and saves as feather"""
     dataframe['index'] = dataframe.index
-    feather.write_dataframe(dataframe, source)
+    feather.write_dataframe(dataframe, path)
 
 
-def read_feather(source: str):
+def read_feather(path):
     """ Wrapper function feather.read_dataframe adds date columns from index"""
-    out_df = feather.read_dataframe(source)
+    out_df = feather.read_dataframe(path)
     out_df = out_df.set_index(['index'])
     return out_df
+
+
+def perf_stats(returns: pd.Series, **kwargs):
+    """ Wrapper function for pf.timeseries.performance"""
+    performance = pf.timeseries.perf_stats(returns, **kwargs)
+    perf_index = list(performance.index)
+    performance['StartDate'], performance['EndDate'] = list(returns.index[[0, -1]]
+                                                            .strftime('%b %d, %Y'))
+    performance = performance.reindex(['StartDate', 'EndDate'] + perf_index)
+    performance = performance.rename(returns.name)
+    performance = performance.drop('common_sense_ratio', axis=0)
+    return performance
 
 
 class USSimpleYieldCurve:

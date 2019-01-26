@@ -9,9 +9,17 @@ from urllib.request import urlretrieve
 from pptx.util import Inches
 from pptx.enum.text import PP_PARAGRAPH_ALIGNMENT as PP_ALIGN
 import pandas_datareader.data as web
-
 import os
 
+
+def title_only_slide(asset_path, slide_dict, presentation, text_msg=None):
+    slide = presentation.slides.add_slide(presentation.slide_layouts[slide_dict['TITLE_ONLY']])
+    for shape in slide.placeholders:
+        print('%d %s' % (shape.placeholder_format.idx, shape.name))
+    placeholder = slide.placeholders[13]  # idx key, not position
+    _ = placeholder.insert_picture(str(asset_path))
+    slide.shapes.title.text = text_msg
+    return slide
 
 def main():
     ppt_path = Path.home() / 'Dropbox' / 'option_overlay'
@@ -22,6 +30,12 @@ def main():
     # Assets
     heat_map_path = fig_path / 'heat_map.png'
     cum_perf_path = fig_path / 'cum_perf.png'
+    cum_total_perf_path = fig_path / 'cum_total_perf.png'
+    delta_path = fig_path / 'Delta.png'
+    gamma_path = fig_path / 'Gamma.png'
+    vega_path = fig_path / 'Vega.png'
+    rho_path = fig_path / 'Rho.png'
+    theta_path = fig_path / 'Theta.png'
 
     # Layout index
     layout_dict = {'TITLE': 0, 'SUB_TITLE': 1, 'QUOTE': 2, 'TITLE_COLUMN1': 3, 'TITLE_COLUMN2': 4, 'TITLE_COLUMN3': 5,
@@ -34,7 +48,7 @@ def main():
         print('%d %s' % (shape.placeholder_format.idx, shape.name))
     prs.slides[0].shapes[0].text = 'Generating Income with Index Options'
 
-    # First slide
+    # 1
     slide = prs.slides.add_slide(prs.slide_layouts[layout_dict['TITLE_COLUMN1']])
     for shape in slide.placeholders:
         print('%d %s' % (shape.placeholder_format.idx, shape.name))
@@ -59,29 +73,38 @@ def main():
         p.alignment = PP_ALIGN.LEFT
         p.level = 1
 
-    # Second slide
-    slide = prs.slides.add_slide(prs.slide_layouts[layout_dict['TITLE_ONLY']])
-    for shape in slide.placeholders:
-        print('%d %s' % (shape.placeholder_format.idx, shape.name))
-    placeholder = slide.placeholders[13]  # idx key, not position
-    _ = placeholder.insert_picture(str(heat_map_path))
-    slide.shapes.title.text = 'Monthly Excess Returns (%)'
-
-    # Third slide
-    slide = prs.slides.add_slide(prs.slide_layouts[layout_dict['TITLE_ONLY']])
-    for shape in slide.placeholders:
-        print('%d %s' % (shape.placeholder_format.idx, shape.name))
-    placeholder = slide.placeholders[13]  # idx key, not position
-    _ = placeholder.insert_picture(str(cum_perf_path))
-    slide.shapes.title.text = 'Cumulative Excess Return'
+    # 2
+    title_only_slide(heat_map_path, layout_dict, prs, text_msg='Monthly Excess Returns (%)')
+    # 3
+    title_only_slide(cum_perf_path, layout_dict, prs, text_msg='Cumulative Excess Return')
+    # 4
+    title_only_slide(cum_total_perf_path, layout_dict, prs, text_msg='Cumulative Total Return')
+    # 5~9
+    greek_dict = {delta_path: 'Delta',
+                  gamma_path: 'Gamma',
+                  vega_path: 'Vega',
+                  rho_path: 'Rho',
+                  theta_path: 'Theta'}
+    for key, value in greek_dict.items():
+        title_only_slide(key, layout_dict, prs, text_msg='Portfolio ' + value)
 
     # Save and open presentation
     prs.save(ppt_path / output_name)
     os.system("open " + str(ppt_path / output_name))
 
+    #
+    # greek_dict = {delta_path: 'Delta',
+    # gamma_path: 'Gamma',
+    # vega_path: 'Vega',
+    # rho_path: 'Rho',
+    # theta_path: 'Theta.png'}
+    # for key, value in greek_dict.items():
+    #     slide = prs.slides.add_slide(prs.slide_layouts[layout_dict['TITLE_ONLY']])
+
 
 if __name__ == '__main__':
     main()
+
 
 
 # for i in range(0, 8, 1):
@@ -158,27 +181,33 @@ def get_fund_assets(update_funds=True):
         all_funds = [fund['Adj Close'] for fund in all_funds]
         all_funds = [fund.rename(fund_name) for fund, fund_name in zip(all_funds, fund_dict.values())]
         all_funds = pd.concat(all_funds, axis=1)
-        write_feather(all_funds, str(db_directory) + feather_name)
-    else:
-        all_funds = read_feather(str(db_directory) + feather_name)
+        write_feather(all_funds, db_directory / feather_name)
+
+    all_funds = read_feather(db_directory / feather_name)
     return all_funds
 
 
-def daily_hfrx():
+def daily_hfrx(update_funds=True):
     db_directory = UpdateSP500Data.DATA_BASE_PATH / 'xl'
-    rows_to_skip = list(range(0, 2))
-    headers = ['Date', 'Index Name', 'Index Code', 'Return', 'Index Value']
+    feather_name = 'hfrx.feather'
+    if update_funds:
+        rows_to_skip = list(range(0, 2))
+        headers = ['Date', 'Index Name', 'Index Code', 'Return', 'Index Value']
 
-    df = pd.read_csv(db_directory / 'hfrx_daily_index_data.csv', skiprows=rows_to_skip,
-                     squeeze=True, names=headers, engine='python')
-    index_codes = df['Index Code'].unique()
-    all_hfrx_list = []
-    for index_code in index_codes[:-1]: # remove HFR company info
-        idx = df['Index Code'] == index_code
-        hfr = df[idx]
-        hfr.loc[:, 'Date'] = pd.to_datetime(hfr.loc[:, 'Date'])
-        hfr = hfr.set_index(['Date'])
-        hfr = hfr.reindex(hfr.index.sort_values())
-        hfr_index = hfr['Index Value'].rename(hfr['Index Name'].unique()[0])
-        all_hfrx_list.append(hfr_index)
-    return pd.concat(all_hfrx_list, axis=1)
+        df = pd.read_csv(db_directory / 'hfrx_daily_index_data.csv', skiprows=rows_to_skip,
+                         squeeze=True, names=headers, engine='python')
+        index_codes = df['Index Code'].unique()
+        all_hfrx_list = []
+        for index_code in index_codes[:-1]: # remove HFR company info
+            idx = df['Index Code'] == index_code
+            hfr = df[idx]
+            hfr.loc[:, 'Date'] = pd.to_datetime(hfr.loc[:, 'Date'])
+            hfr = hfr.set_index(['Date'])
+            hfr = hfr.reindex(hfr.index.sort_values())
+            hfr_index = hfr['Index Value'].rename(hfr['Index Name'].unique()[0])
+            all_hfrx_list.append(hfr_index)
+        hfrx = pd.concat(all_hfrx_list, axis=1)
+        write_feather(hfrx, UpdateSP500Data.DATA_BASE_PATH / 'feather' / feather_name)
+
+    hfrx = read_feather(UpdateSP500Data.DATA_BASE_PATH / 'feather' / feather_name)
+    return hfrx
