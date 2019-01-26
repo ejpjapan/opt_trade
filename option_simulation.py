@@ -313,7 +313,15 @@ class OptionTrades:
     def returns(self):
         """Return daily arithmetic returns"""
         returns_out = self.all_returns[-1].rename(self.strategy_name)
-        return returns_out.to_frame()
+        return returns_out
+
+    @property
+    def return_index(self):
+        """Return daily arithmetic returns"""
+        index_out = pf.timeseries.cum_returns(self.returns, 100)
+        index_out[self.simulation_parameters.sim_dates_live[0]] = 100
+        index_out = index_out.reindex(index_out.index.sort_values())
+        return index_out
 
     @property
     def strategy_name(self):
@@ -332,7 +340,7 @@ class OptionTrades:
     def performance_summary(self):
         """Get simulation performance"""
         # convert returns to series for pyfolio function
-        performance = pf.timeseries.perf_stats(self.returns[self.returns.columns[0]])
+        performance = pf.timeseries.perf_stats(self.returns)
         perf_index = list(performance.index)
         performance['StartDate'], performance['EndDate'] = list(self.simulation_parameters.sim_dates_live[[0, -1]]
                                                                 .strftime('%b %d, %Y'))
