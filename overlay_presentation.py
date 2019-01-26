@@ -4,9 +4,12 @@ from pathlib import Path
 import pandas as pd
 from pptx import Presentation
 from spx_data_update import UpdateSP500Data
+from option_utilities import read_feather, write_feather
 from urllib.request import urlretrieve
 from pptx.util import Inches
 from pptx.enum.text import PP_PARAGRAPH_ALIGNMENT as PP_ALIGN
+import pandas_datareader.data as web
+
 import os
 
 
@@ -124,3 +127,58 @@ def aqr_alt_funds(update_funds=True):
         df = df.rename(key)
         aqr_funds_index.append(df)
     return pd.concat(aqr_funds_index, axis=1)
+
+
+def get_fund_assets(update_funds=True):
+
+    db_directory = UpdateSP500Data.DATA_BASE_PATH / 'feather'
+    feather_name = 'all_funds.feather'
+    if update_funds:
+        fund_dict = {'^GSPC': 'S&P 500',
+            'VDIGX': 'VG Dividend Growth',
+            'VEIRX': 'VG Equity-Income',
+            'VWEAX': 'VG High-Yield Corporate',
+            'VWALX': 'VG High-Yield Muni',
+            'VBTLX': 'VG Total Bond Market',
+            'BXMIX': 'Blackstone Alternatives',
+            'QLEIX': 'AQR Equity Long/Short',
+            'QGMIX': 'AQR Global Macro',
+            'QMHIX': 'AQR Managed Futures',
+            'ADAIX': 'AQR Diversified Arbitrage',
+            'QSPIX': 'AQR Style Premia',
+            'AVGRX': 'Dreyfus Dynamic Total Return', #$1.141bn
+            'FAAAX': 'K2 Franklin Alternative',# fund $1.17bn
+            'GJRTX': 'GSAM Absolute return', # tracker $2.36bn
+            'MASNX': 'Litman Gregory Masters Alt',# Strats Fund $2.05bn
+            'PSMIX': 'Principal Global Multi-Strategy',# Fund $2.76bn
+            'QOPIX': 'Oppenheimer Fundamental Alternatives',# Fd $1.20
+            'GAFYX': 'Natixis ASG Global Alternatives'} #  Fd $1.39bn
+
+        all_funds = [web.get_data_yahoo(key, 'JAN-16-04') for key, _ in fund_dict.items()]
+        all_funds = [fund['Adj Close'] for fund in all_funds]
+        all_funds = [fund.rename(fund_name) for fund, fund_name in zip(all_funds, fund_dict.values())]
+        all_funds = pd.concat(all_funds, axis=1)
+        write_feather(all_funds, str(db_directory) + feather_name)
+    else:
+        all_funds = read_feather(str(db_directory) + feather_name)
+    return all_funds
+
+
+def daily_hfrx():
+    db_directory = UpdateSP500Data.DATA_BASE_PATH / 'xl'
+    rows_to_skip = list(range(0, 2))
+    headers = ['Date', 'Index Name', 'Index Code', 'Return', 'Index Value']
+
+    df = pd.read_csv(db_directory / 'hfrx_daily_index_data.csv', skiprows=rows_to_skip,
+                     squeeze=True, names=headers, engine='python')
+    index_codes = df['Index Code'].unique()
+    all_hfrx_list = []
+    for index_code in index_codes[:-1]: # remove HFR company info
+        idx = df['Index Code'] == index_code
+        hfr = df[idx]
+        hfr.loc[:, 'Date'] = pd.to_datetime(hfr.loc[:, 'Date'])
+        hfr = hfr.set_index(['Date'])
+        hfr = hfr.reindex(hfr.index.sort_values())
+        hfr_index = hfr['Index Value'].rename(hfr['Index Name'].unique()[0])
+        all_hfrx_list.append(hfr_index)
+    return pd.concat(all_hfrx_list, axis=1)
