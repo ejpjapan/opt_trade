@@ -17,7 +17,7 @@ def title_only_slide(asset_path, slide_dict, presentation, text_msg=None):
     for shape in slide.placeholders:
         print('%d %s' % (shape.placeholder_format.idx, shape.name))
     placeholder = slide.placeholders[13]  # idx key, not position
-    _ = placeholder.insert_picture(str(asset_path))
+    placeholder_picture = placeholder.insert_picture(str(asset_path))
     slide.shapes.title.text = text_msg
     return slide
 
@@ -62,7 +62,7 @@ def main():
     ]
     text_frame = slide.placeholders[1].text_frame
     text_frame.clear()  # remove any existing paragraphs, leaving one empty one
-
+    
     p = text_frame.paragraphs[0]
     p.text = paragraph_strs[0]
     p.alignment = PP_ALIGN.LEFT
