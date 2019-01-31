@@ -20,7 +20,7 @@ from spx_data_update import UpdateSP500Data, get_dates
 
 class OptionSimulation:
     COL_NAMES = ['strike_traded', 'strike_theo', 'days_2_exp', 'zero', 'bid_1545', 'ask_1545']
-    GREEK_COL_NAMES = ['delta_1545', 'gamma_1545', 'theta_1545', 'vega_1545', 'rho_1545', 'implied_volatility_1545']
+    GREEK_COL_NAMES = ['delta_1545', 'gamma_1545', 'theta_1545', 'vega_1545', 'rho_1545', 'implied_volatility_1545', 'active_underlying_price_1545']
 
     def __init__(self, update_simulation_data=False):
         if update_simulation_data:
@@ -299,6 +299,14 @@ class OptionTrades:
         for item in self.simulation_parameters.dtf_trades:
             strike_list.append(item['strike_traded'].iloc[:-1].astype(np.float64))
         return pd.concat(strike_list)
+
+    @property
+    def spot(self):
+        """Get trade simulation strikes"""
+        spot_list = []
+        for item in self.simulation_parameters.dtf_trades:
+            spot_list.append(item['strike_traded'].iloc[:-1].astype(np.float64))
+        return pd.concat(spot_list)
 
     @property
     def days_2_expiry(self):
