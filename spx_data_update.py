@@ -8,9 +8,10 @@ from time import time
 import feather
 import pandas as pd
 import numpy as np
-import pandas_datareader.data as web
+# import pandas_datareader.data as web
 import quandl
-from option_utilities import USZeroYieldCurve, write_feather
+from option_utilities import USZeroYieldCurve, write_feather, read_feather
+from ib_insync import IB, util, Index
 
 
 class UpdateSP500Data:
@@ -224,17 +225,32 @@ def get_dates(feather_directory):
 
 
 def get_vix():
-    """Fetch vix from Yahoo'''
+    """Fetch vix from Interactive Brokers and append to history'''
     :return: Dataframe
     """
-    # fred_vix = web.DataReader(['VIXCLS'], 'fred', datetime.datetime(1990, 1, 1))
-    # fred_vix = fred_vix.copy().dropna()
+    ib = IB()
+    ib.connect('127.0.0.1', port=4001, clientId=30)
+    vix = Index('VIX')
+    cds = ib.reqContractDetails(vix)
 
-    vix = web.get_data_yahoo('^VIX', 'JAN-01-90')
-    vix = vix['Close']
-    vix = vix.rename('VIXCLS')
+    # contracts = [cd.contract for cd in cds]
+    bars = ib.reqHistoricalData(cds[0].contract,
+                                endDateTime='',
+                                durationStr='1 Y',
+                                barSizeSetting='1 day',
+                                whatToShow='TRADES',
+                                useRTH=True,
+                                formatDate=1)
+    ib.disconnect()
+    vix = util.df(bars)
+    vix = vix.set_index('date')
+    vix = vix[['open', 'high', 'low', 'close']]
 
-    return vix
+    vix_history = read_feather(str(UpdateSP500Data.TOP_LEVEL_PATH / 'vix_history'))
+
+    full_hist = vix.combine_first(vix_history)
+    write_feather(full_hist, str(UpdateSP500Data.TOP_LEVEL_PATH / 'vix_history'))
+    return full_hist['close']
 
 
 def get_sp5_dividend_yield():
@@ -274,28 +290,40 @@ def scrape_sp5_div_yield():
     return spx_dividend_yld
 
 
-def data_shop_login():
-    """Get CBOE Datashop password and user name from config plist"""
-    file_name = UpdateSP500Data.DATA_BASE_PATH / 'config.plist'
-    assert(file_name.is_file())
-    f = open(str(file_name), 'rb')
-    pl = plistlib.load(f)
-    return pl['cbeoDataShop_dict']
+# def data_shop_login():
+#     """Get CBOE Datashop password and user name from config plist"""
+#     file_name = UpdateSP500Data.DATA_BASE_PATH / 'config.plist'
+#     assert(file_name.is_file())
+#     f = open(str(file_name), 'rb')
+#     pl = plistlib.load(f)
+#     return pl['cbeoDataShop_dict']
+
+
+# def quandle_api():
+#     """Get Quandl API key"""
+#     file_name = UpdateSP500Data.DATA_BASE_PATH / 'config.plist'
+#     assert(file_name.is_file())
+#     f = open(str(file_name), 'rb')
+#     pl = plistlib.load(f)
+#     return pl['Quandl']
 
 
 def quandle_api():
-    """Get Quandl API key"""
+    return config_ket('Quandl')
+
+
+def data_shop_login():
+    return config_ket('cbeoDataShop_dict')
+
+
+def config_ket(dict_key: str):
     file_name = UpdateSP500Data.DATA_BASE_PATH / 'config.plist'
-    assert(file_name.is_file())
+    assert (file_name.is_file())
     f = open(str(file_name), 'rb')
     pl = plistlib.load(f)
-    return pl['Quandl']
+    return pl[dict_key]
 
 
-# import os
-# from pathlib import Path
-# from spx_data_update import UpdateSP500Data
-# import feather
 def feather_clean(in_directory):
     # in_directory = UpdateSP500Data.TOP_LEVEL_PATH / 'feather'
     Path.is_dir(in_directory)
@@ -313,7 +341,6 @@ def feather_clean(in_directory):
             # idx2 = option_df['root'] == 'SPXM'
             # option_df = option_df.drop(option_df.index[idx2])
             feather.write_dataframe(option_df, str(in_directory / item))
-
 
 
 def main():
