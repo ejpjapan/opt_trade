@@ -30,6 +30,32 @@ def time_it(method):
     return timed
 
 
+def color_axis(ax, txt_color):
+    for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+                 ax.get_xticklabels() + ax.get_yticklabels()):
+        item.set_color(txt_color)
+
+
+def invisible_spines(ax):
+    """Hide axis spines"""
+    for key, value in ax.spines.items():
+        ax.spines[key].set_visible(False)
+
+
+def grid_ticks_format(ax_list):
+    """Hide x & y ticks and format grid lines"""
+    [ax.grid(color='grey',
+             linestyle=':',
+             linewidth=1,
+             alpha=0.5) for ax in ax_list]
+
+    [ax.tick_params(axis='both',  # changes apply to the both axis 'x', 'y'
+                    which='both',  # both major and minor ticks are affected
+                    bottom=False,  # ticks along the bottom edge are off
+                    top=False,
+                    left=False) for ax in ax_list]
+
+
 def next_third_friday(dts):
     """ Given a third friday find next third friday"""
     dts += timedelta(weeks=4)
