@@ -362,47 +362,48 @@ class OptionTrades:
 
         return performance
 
-    @staticmethod
-    def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font_size=20):
 
-        fig = plt.figure(figsize=(20, 10))
-        gs = gridspec.GridSpec(2, 2, wspace=0.5, hspace=0.5)
-        ax_heatmap = plt.subplot(gs[0, 0])
-        ax_monthly = plt.subplot(gs[0, 1])
-        ax_box_plot = plt.subplot(gs[1, 0])
-        ax_yearly = plt.subplot(gs[1, 1])
+def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font_size=20):
 
-        #   Chart 1: Heatmap
-        pf.plotting.plot_monthly_returns_heatmap(returns, ax=ax_heatmap)
-        ax_heatmap.set_xticklabels(np.arange(0.5, 12.5, step=1))
-        ax_heatmap.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
+    fig = plt.figure(figsize=(16, 9))
+    fig.suptitle(returns.name, fontsize=16)
+    gs = gridspec.GridSpec(2, 2, wspace=0.5, hspace=0.5)
+    ax_heatmap = plt.subplot(gs[0, 0])
+    ax_monthly = plt.subplot(gs[0, 1])
+    ax_box_plot = plt.subplot(gs[1, 0])
+    ax_yearly = plt.subplot(gs[1, 1])
 
-        #   Chart 2: Monthly return distribution
-        pf.plotting.plot_monthly_returns_dist(returns, ax=ax_monthly)
-        ax_monthly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
-        leg1 = ax_monthly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
-        for text in leg1.get_texts():
-            # text.set_color('white')
-            text.set_label('mean')
+    #   Chart 1: Heatmap
+    pf.plotting.plot_monthly_returns_heatmap(returns, ax=ax_heatmap)
+    ax_heatmap.set_xticklabels(np.arange(0.5, 12.5, step=1))
+    ax_heatmap.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
 
-        #   Chart 3: Return quantiles
-        pf.plotting.plot_return_quantiles(returns, ax=ax_box_plot)
+    #   Chart 2: Monthly return distribution
+    pf.plotting.plot_monthly_returns_dist(returns, ax=ax_monthly)
+    ax_monthly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
+    leg1 = ax_monthly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
+    for text in leg1.get_texts():
+        # text.set_color('white')
+        text.set_label('mean')
 
-        #   Chart 4: Annual returns
-        pf.plotting.plot_annual_returns(returns, ax=ax_yearly)
-        _ = ax_yearly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
-        ax_yearly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
+    #   Chart 3: Return quantiles
+    pf.plotting.plot_return_quantiles(returns, ax=ax_box_plot)
 
-        for ax in [ax_box_plot, ax_heatmap, ax_monthly, ax_yearly]:
-            for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-                         ax.get_xticklabels() + ax.get_yticklabels()):
-                item.set_fontsize(font_size)
+    #   Chart 4: Annual returns
+    pf.plotting.plot_annual_returns(returns, ax=ax_yearly)
+    _ = ax_yearly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
+    ax_yearly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
 
-        for items in (ax_yearly.get_yticklabels() + ax_heatmap.get_yticklabels()):
-            items.set_fontsize(font_size - 5)
-        if fig_path is not None:
-            if Path.is_dir(fig_path):
-                plt.savefig(fig_path / fig_name, dpi=600, bbox_inches='tight', transparent=True)
-            return fig
+    for ax in [ax_box_plot, ax_heatmap, ax_monthly, ax_yearly]:
+        for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+                     ax.get_xticklabels() + ax.get_yticklabels()):
+            item.set_fontsize(font_size)
+
+    for items in (ax_yearly.get_yticklabels() + ax_heatmap.get_yticklabels()):
+        items.set_fontsize(font_size - 5)
+    if fig_path is not None:
+        if Path.is_dir(fig_path):
+            plt.savefig(fig_path / fig_name, dpi=600, bbox_inches='tight', transparent=True)
+        return fig
 
 
