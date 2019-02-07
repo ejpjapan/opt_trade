@@ -6,7 +6,8 @@ Created on Sat Mar 10 14:50:38 2018
 
 import calendar
 from time import time
-from datetime import timedelta, date
+# from datetime import timedelta, date
+import datetime as dt
 from pathlib import Path
 import numpy as np
 import pandas_datareader.data as web
@@ -16,6 +17,8 @@ from XmlConverter import XmlConverter
 from urllib.request import urlretrieve
 import pandas as pd
 import pyfolio as pf
+import matplotlib.transforms as bbox
+from matplotlib import rcParams
 
 
 def time_it(method):
@@ -58,15 +61,15 @@ def grid_ticks_format(ax_list):
 
 def next_third_friday(dts):
     """ Given a third friday find next third friday"""
-    dts += timedelta(weeks=4)
-    return dts if dts.day >= 15 else dts + timedelta(weeks=1)
+    dts += dt.timedelta(weeks=4)
+    return dts if dts.day >= 15 else dts + dt.timedelta(weeks=1)
 
 
 def third_fridays(dts, num_dts):
     """Given a date, calculates num_dts next third fridays"""
     # Find closest friday to 15th of month
-    middle_month = date(dts.year, dts.month, 15)
-    result = [middle_month + timedelta(days=(calendar.FRIDAY - middle_month.weekday()) % 7)]
+    middle_month = dt.date(dts.year, dts.month, 15)
+    result = [middle_month + dt.timedelta(days=(calendar.FRIDAY - middle_month.weekday()) % 7)]
     # This month's third friday is today or has passed. Find next.
     if result[0] <= dts:
         result[0] = next_third_friday(result[0])
@@ -145,6 +148,30 @@ def perf_stats(returns: pd.Series, **kwargs):
     return performance
 
 
+class PlotConstants:
+    FONT_SIZE = 9
+    FIG_PATH = Path.home() / 'Dropbox' / 'outputDev' / 'fig'
+    BB = bbox.Bbox([[0.25, 0.25], [7.46, 4.2]])
+    FIG_SIZE = (8, 4.5)  # 16/9 Aspect ratio
+    COLOR_LIGHT = '#3f5378'
+    COLOR_DARK = '#263248'
+    COLOR_YELLOW = '#ff9800'
+
+    def __init__(self, font_size=FONT_SIZE, fig_path=FIG_PATH, fig_size=FIG_SIZE,
+                 bb=BB, color_light=COLOR_LIGHT, color_dark=COLOR_DARK, color_yellow=COLOR_YELLOW):
+        rcParams['font.sans-serif'] = 'Roboto Condensed'
+        rcParams['font.family'] = 'sans-serif'
+
+        self.font_size = font_size
+        self.fig_path = fig_path
+
+        self.bb = bb
+        self.fig_size = fig_size
+        self.color_light = color_light
+        self.color_dark = color_dark
+        self.color_yellow = color_yellow
+
+
 class USSimpleYieldCurve:
     """Simple US Zero coupon yield curve for today up to one year"""
     # Simple Zero yield curve built from TBill discount yields and effective fund rate
@@ -152,8 +179,8 @@ class USSimpleYieldCurve:
     # Consider improving by building fully specified yield curve model using
     # Quantlib
     def __init__(self):
-        end = date.today()
-        start = end - timedelta(days=10)
+        end = dt.date.today()
+        start = end - dt.timedelta(days=10)
         zero_rates = web.DataReader(['DFF', 'DTB4WK', 'DTB3', 'DTB6', 'DTB1YR'], 'fred', start, end)
         zero_rates = zero_rates.dropna(axis=0)
         zero_yld_date = zero_rates.index[-1]
@@ -266,3 +293,14 @@ class USZeroYieldCurve:
         cash_idx = pf.timeseries.cum_returns(return_per_day, 100)
         return cash_idx
 
+
+def matlab2datetime(matlab_datenum):
+        def matlab_convert_2_datetime(single_date):
+            day = dt.datetime.fromordinal(int(single_date))
+            dayfrac = dt.timedelta(days=single_date % 1) - dt.timedelta(days=366)
+            return day + dayfrac
+        try:
+            python_dates = [matlab_convert_2_datetime(int(dts)) for dts in matlab_datenum]
+        except TypeError:
+            print(matlab_datenum, 'is not iterable')
+        return pd.DatetimeIndex(python_dates)

@@ -8,7 +8,6 @@ from time import time
 import feather
 import pandas as pd
 import numpy as np
-# import pandas_datareader.data as web
 import quandl
 from option_utilities import USZeroYieldCurve, write_feather, read_feather
 from ib_insync import IB, util, Index

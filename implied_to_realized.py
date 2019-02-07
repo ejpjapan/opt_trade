@@ -70,6 +70,7 @@ class SPX5MinuteBars:
         _ = ax.set_ylabel('Annualized Vol %')
         return ax
 
+    @property
     def realized_vol(self):
         """Annualized daily volatility calculated as sum of squared 5 minute returns"""
         squared_diff = (np.log(self.bars['close'] / self.bars['close'].shift(1))) ** 2
@@ -101,7 +102,7 @@ class SPX5MinuteBars:
     @property
     def realized_variance(self):
         """Realized variance see VRP literature"""
-        realized_quadratic_variation = (self.realized_vol()**2) / 252
+        realized_quadratic_variation = (self.realized_vol**2) / 252
         rv = realized_quadratic_variation.rolling(self.realized_window).sum()
         rv = rv.rename('RV_CALC')
         return rv
