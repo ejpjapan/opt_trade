@@ -21,6 +21,7 @@ def title_only_slide(asset_path, slide_dict, presentation, text_msg=None):
     slide.shapes.title.text = text_msg
     return slide
 
+
 def main():
     ppt_path = Path.home() / 'Dropbox' / 'option_overlay'
     fig_path = Path.home() / 'Dropbox' / 'outputDev' / 'fig'

@@ -18,6 +18,7 @@ import pandas as pd
 import pyfolio as pf
 import matplotlib.transforms as bbox
 from matplotlib import rcParams
+# from spx_data_update import UpdateSP500Data
 
 
 def time_it(method):
@@ -152,6 +153,30 @@ def perf_stats(returns: pd.Series, **kwargs):
     performance = performance.rename(returns.name)
     performance = performance.drop('common_sense_ratio', axis=0)
     return performance
+
+
+def get_asset(fund_dict, update=True):
+    db_directory = Path.home() / 'Library' / 'Mobile Documents' / 'com~apple~CloudDocs' / 'localDB' / 'feather'
+    if update:
+        all_funds = [web.get_data_yahoo(key, 'DEC-31-70') for key, _ in fund_dict.items()]
+        all_funds = [fund['Adj Close'] for fund in all_funds]
+        all_funds = [fund.rename(fund_name) for fund, fund_name in zip(all_funds, fund_dict.values())]
+        [write_feather(fund.to_frame(), db_directory / (name + '.feather')) for fund, name in zip(all_funds, fund_dict.keys())]
+    all_funds = [read_feather(db_directory / (key + '.feather')) for key, _ in fund_dict.items()]
+    return all_funds
+
+
+def matlab2datetime(matlab_datenum):
+    def matlab_convert_2_datetime(single_date):
+        day = dt.datetime.fromordinal(int(single_date))
+        dayfrac = dt.timedelta(days=single_date % 1) - dt.timedelta(days=366)
+        return day + dayfrac
+
+    try:
+        python_dates = [matlab_convert_2_datetime(int(dts)) for dts in matlab_datenum]
+    except TypeError:
+        print(matlab_datenum, 'is not iterable')
+    return pd.DatetimeIndex(python_dates)
 
 
 class PlotConstants:
@@ -300,14 +325,5 @@ class USZeroYieldCurve:
         return cash_idx
 
 
-def matlab2datetime(matlab_datenum):
-        def matlab_convert_2_datetime(single_date):
-            day = dt.datetime.fromordinal(int(single_date))
-            dayfrac = dt.timedelta(days=single_date % 1) - dt.timedelta(days=366)
-            return day + dayfrac
-        try:
-            python_dates = [matlab_convert_2_datetime(int(dts)) for dts in matlab_datenum]
-        except TypeError:
-            print(matlab_datenum, 'is not iterable')
-        return pd.DatetimeIndex(python_dates)
+
 

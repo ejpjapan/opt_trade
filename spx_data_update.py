@@ -12,7 +12,7 @@ import quandl
 from scipy.io import loadmat
 from pyfolio.timeseries import cum_returns
 
-from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime
+from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime, get_asset
 from ib_insync import IB, util, Index
 
 
@@ -259,8 +259,7 @@ class VixTSM:
 
 # class SP500Index:
 #     def __init__(self):
-#
-
+#     get_asset
 
 
 def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
