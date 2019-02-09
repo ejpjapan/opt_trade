@@ -9,7 +9,10 @@ import feather
 import pandas as pd
 import numpy as np
 import quandl
-from option_utilities import USZeroYieldCurve, write_feather, read_feather
+from scipy.io import loadmat
+from pyfolio.timeseries import cum_returns
+
+from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime
 from ib_insync import IB, util, Index
 
 
@@ -193,6 +196,73 @@ class ClosingPriceHistory:
         write_feather(self.daily_close, str(output_directory / 'sp500_close'))
 
 
+class VixTSM:
+    def __init__(self):
+        """ Class to retrieve tsm vix futures data and create return and index series"""
+        try:
+            raw_tsm = loadmat('/Volumes/ExtraStorage/base/db/fut/vix.mat')
+        except FileNotFoundError:
+            raw_tsm = loadmat(str(UpdateSP500Data.DATA_BASE_PATH / 'mat' / 'vix.mat'))
+        python_dates = matlab2datetime(raw_tsm['t'].squeeze())
+        column_names = [item[0] for item in raw_tsm['h'][:, 0]]
+        raw_tsm_df = pd.DataFrame(data=raw_tsm['x'], index=python_dates, columns=column_names)
+        self.raw_tsm_df = raw_tsm_df['close1'].dropna(how='any')
+
+        date_list = []
+        master_contract_code_list = []
+        for date_num in range(1, len(python_dates)):
+            date_list.append(raw_tsm['i'][0][0][0][date_num][0][0])
+            contract_code_list = []
+            for contract_num in range(1, 10):
+                contract_code_list.append(raw_tsm['i'][0][0][0][date_num][contract_num][0])
+            master_contract_code_list.append(contract_code_list)
+        self.contract_codes_df = pd.DataFrame(data=master_contract_code_list,
+                                              index=pd.DatetimeIndex(pd.to_datetime(date_list)))
+        self.contract_num = 1  # Equivalent to 10bps of vega notional for each contract
+        self.vega_notional = True
+        self.contract_month = 0
+
+    @property
+    def vix_ret_long(self):
+        contract_bool_list = [self.contract_codes_df.iloc[:, self.contract_month] == item for item in
+                              self.contract_codes_df.iloc[:, 0].unique()]
+        raw_contracts = [self.raw_tsm_df[item] for item in contract_bool_list]
+        contract_multiplier = 1000
+        notional_capital = 1000000
+
+        if self.vega_notional:
+            raw_returns = [(item.diff().dropna(how='any') * self.contract_num * contract_multiplier) / notional_capital
+                           for item in raw_contracts]
+            strat_name = 'contract{0}vega{1}bpsL'.format(self.contract_month, self.contract_num * 10)
+        else:
+            raw_returns = [item.pct_change().dropna(how='any') for item in raw_contracts]
+            strat_name = 'collateralized'
+
+        daily_returns = pd.concat(raw_returns, axis=0)
+
+        return daily_returns.rename(strat_name)
+
+    @property
+    def vix_idx_long(self):
+        return cum_returns(self.vix_ret_long, 100)
+
+    @property
+    def vix_idx_short(self):
+        idx = 1 / self.vix_idx_long
+        idx = idx / idx[0] * 100
+        return idx.rename(idx.name[:-1] + 'S')
+
+    @property
+    def vix_ret_short(self):
+        return self.vix_idx_short.pct_change()
+
+
+# class SP500Index:
+#     def __init__(self):
+#
+
+
+
 def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
     "Retrieve closing price for S&P 500"
     daily_close = np.empty(len(in_dates))
@@ -289,24 +359,6 @@ def scrape_sp5_div_yield():
     return spx_dividend_yld
 
 
-# def data_shop_login():
-#     """Get CBOE Datashop password and user name from config plist"""
-#     file_name = UpdateSP500Data.DATA_BASE_PATH / 'config.plist'
-#     assert(file_name.is_file())
-#     f = open(str(file_name), 'rb')
-#     pl = plistlib.load(f)
-#     return pl['cbeoDataShop_dict']
-
-
-# def quandle_api():
-#     """Get Quandl API key"""
-#     file_name = UpdateSP500Data.DATA_BASE_PATH / 'config.plist'
-#     assert(file_name.is_file())
-#     f = open(str(file_name), 'rb')
-#     pl = plistlib.load(f)
-#     return pl['Quandl']
-
-
 def quandle_api():
     return config_ket('Quandl')
 
@@ -324,6 +376,7 @@ def config_ket(dict_key: str):
 
 
 def feather_clean(in_directory):
+    """ Utility function to clean feather files"""
     # in_directory = UpdateSP500Data.TOP_LEVEL_PATH / 'feather'
     Path.is_dir(in_directory)
     all_files = os.listdir(in_directory)

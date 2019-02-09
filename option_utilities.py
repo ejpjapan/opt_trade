@@ -32,6 +32,13 @@ def time_it(method):
     return timed
 
 
+def chart_format(ax_list, txt_color):
+    grid_ticks_format(ax_list)
+    for item in ax_list:
+        color_axis(item, txt_color)
+        invisible_spines(item)
+
+
 def color_axis(ax, txt_color):
     for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                  ax.get_xticklabels() + ax.get_yticklabels()):

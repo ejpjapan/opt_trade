@@ -367,7 +367,7 @@ def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font
 
     fig = plt.figure(figsize=(16, 9))
     fig.suptitle(returns.name, fontsize=16)
-    gs = gridspec.GridSpec(2, 2, wspace=0.5, hspace=0.5)
+    gs = gridspec.GridSpec(2, 2, wspace=0.2, hspace=0.3)
     ax_heatmap = plt.subplot(gs[0, 0])
     ax_monthly = plt.subplot(gs[0, 1])
     ax_box_plot = plt.subplot(gs[1, 0])
