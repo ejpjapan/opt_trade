@@ -156,6 +156,8 @@ def perf_stats(returns: pd.Series, **kwargs):
 
 
 def get_asset(fund_dict, update=True):
+    """Wrapper function to return Adjusted close from Yahoo - Use with care as fund dictionary value will over-write
+    name"""
     db_directory = Path.home() / 'Library' / 'Mobile Documents' / 'com~apple~CloudDocs' / 'localDB' / 'feather'
     if update:
         all_funds = [web.get_data_yahoo(key, 'DEC-31-70') for key, _ in fund_dict.items()]

@@ -257,9 +257,18 @@ class VixTSM:
         return self.vix_idx_short.pct_change()
 
 
-# class SP500Index:
-#     def __init__(self):
-#     get_asset
+class SP500Index:
+    def __init__(self, **kwargs):
+        return_index_list = get_asset({'^GSPC': 'S&P 500'}, **kwargs)
+        return_index = return_index_list[0]
+        self.return_index = return_index[return_index.columns[0]]
+
+    @property
+    def excess_return_index(self):
+        zeros = USZeroYieldCurve(update_data=True)
+        cash_index = zeros.cash_index[self.return_index.index]
+        excess_return_index = self.return_index / cash_index
+        return excess_return_index / excess_return_index[0] * 100
 
 
 def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
