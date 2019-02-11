@@ -165,7 +165,7 @@ def get_fund_assets(update_funds=True):
     db_directory = UpdateSP500Data.DATA_BASE_PATH / 'feather'
     feather_name = 'all_funds.feather'
     if update_funds:
-        fund_dict = {'^GSPC': 'S&P 500',
+        fund_dict = {'^SP500TR': 'S&P 500',
             'VDIGX': 'VG Dividend Growth',
             'VEIRX': 'VG Equity-Income',
             'VWEAX': 'VG High-Yield Corporate',

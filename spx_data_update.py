@@ -259,7 +259,7 @@ class VixTSM:
 
 class SP500Index:
     def __init__(self, **kwargs):
-        return_index_list = get_asset({'^GSPC': 'S&P 500'}, **kwargs)
+        return_index_list = get_asset({'^SP500TR': 'S&P 500'}, **kwargs)
         return_index = return_index_list[0]
         self.return_index = return_index[return_index.columns[0]]
 

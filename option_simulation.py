@@ -376,11 +376,15 @@ def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font
     #   Chart 1: Heatmap
     pf.plotting.plot_monthly_returns_heatmap(returns, ax=ax_heatmap)
     ax_heatmap.set_xticklabels(np.arange(0.5, 12.5, step=1))
-    ax_heatmap.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
+    ax_heatmap.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                               rotation=45)
+    ax_heatmap.set_xlabel('')
+    # ax_heatmap.set_label(rotation=90)
 
     #   Chart 2: Monthly return distribution
     pf.plotting.plot_monthly_returns_dist(returns, ax=ax_monthly)
     ax_monthly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
+    ax_monthly.set_xlabel('')
     leg1 = ax_monthly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
     for text in leg1.get_texts():
         # text.set_color('white')
@@ -393,7 +397,8 @@ def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font
     pf.plotting.plot_annual_returns(returns, ax=ax_yearly)
     _ = ax_yearly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
     ax_yearly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
-
+    plt.xticks(rotation=45)
+    ax_yearly.set_xlabel('')
     for ax in [ax_box_plot, ax_heatmap, ax_monthly, ax_yearly]:
         for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                      ax.get_xticklabels() + ax.get_yticklabels()):
