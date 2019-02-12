@@ -11,6 +11,7 @@ import numpy as np
 import quandl
 from scipy.io import loadmat
 from pyfolio.timeseries import cum_returns
+from urllib.request import urlretrieve
 
 from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime, get_asset
 from ib_insync import IB, util, Index
@@ -221,6 +222,7 @@ class VixTSM:
         self.contract_num = 1  # Equivalent to 10bps of vega notional for each contract
         self.vega_notional = True
         self.contract_month = 0
+        self.start_date = self.raw_tsm_df.index[0]
 
     @property
     def vix_ret_long(self):
@@ -244,7 +246,11 @@ class VixTSM:
 
     @property
     def vix_idx_long(self):
-        return cum_returns(self.vix_ret_long, 100)
+        start_idx = 100
+        cumulative_returns = cum_returns(self.vix_ret_long, start_idx)
+        # Add back start of index
+        cumulative_returns[self.start_date] = start_idx
+        return cumulative_returns.reindex(cumulative_returns.index.sort_values())
 
     @property
     def vix_idx_short(self):
@@ -259,9 +265,10 @@ class VixTSM:
 
 class SP500Index:
     def __init__(self, **kwargs):
-        return_index_list = get_asset({'^SP500TR': 'S&P 500'}, **kwargs)
-        return_index = return_index_list[0]
+        return_index_list = get_asset({'^SP500TR': 'S&P 500TR', '^GSPC': 'S&P 500'}, **kwargs)
+        return_index, price_index = [item for item in return_index_list]
         self.return_index = return_index[return_index.columns[0]]
+        self.price_index = price_index[price_index.columns[0]]
 
     @property
     def excess_return_index(self):
@@ -269,6 +276,25 @@ class SP500Index:
         cash_index = zeros.cash_index[self.return_index.index]
         excess_return_index = self.return_index / cash_index
         return excess_return_index / excess_return_index[0] * 100
+
+
+class CBOEIndex:
+    def __init__(self):
+        db_directory = UpdateSP500Data.DATA_BASE_PATH / 'xl'
+        cboe_dict = {'cboe_vvix': 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vvixtimeseries.csv',
+                          'cboe_skew': 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/skewdailyprices.csv'}
+
+        [urlretrieve(value, db_directory / str(key + '.csv')) for key, value in cboe_dict.items()]
+
+        vvix, skew = [pd.read_csv(value, str(db_directory / str(key + '.csv')),
+                                  skiprows=1,
+                                  delimiter=',') for key, value in cboe_dict.items()]
+
+        vvix['Date'], skew['Date'] = [df['Date'].apply(pd.to_datetime) for df in [vvix, skew]]
+
+        vvix, skew = [df.set_index('Date') for df in [vvix, skew]]
+        vvix, skew = [item[item.columns[0]] for item in [vvix, skew]]
+        self.vvix, self.skew = [item.ffill() for item in [vvix, skew]]
 
 
 def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):

@@ -379,6 +379,7 @@ def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font
     ax_heatmap.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
                                rotation=45)
     ax_heatmap.set_xlabel('')
+    ax_heatmap.set_ylabel('')
     # ax_heatmap.set_label(rotation=90)
 
     #   Chart 2: Monthly return distribution
@@ -399,6 +400,7 @@ def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font
     ax_yearly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
     plt.xticks(rotation=45)
     ax_yearly.set_xlabel('')
+    ax_yearly.set_ylabel('')
     for ax in [ax_box_plot, ax_heatmap, ax_monthly, ax_yearly]:
         for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
                      ax.get_xticklabels() + ax.get_yticklabels()):
