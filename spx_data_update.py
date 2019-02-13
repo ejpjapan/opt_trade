@@ -206,43 +206,59 @@ class VixTSM:
             raw_tsm = loadmat(str(UpdateSP500Data.DATA_BASE_PATH / 'mat' / 'vix.mat'))
         python_dates = matlab2datetime(raw_tsm['t'].squeeze())
         column_names = [item[0] for item in raw_tsm['h'][:, 0]]
-        raw_tsm_df = pd.DataFrame(data=raw_tsm['x'], index=python_dates, columns=column_names)
-        self.raw_tsm_df = raw_tsm_df['close1'].dropna(how='any')
-
-        date_list = []
-        master_contract_code_list = []
-        for date_num in range(1, len(python_dates)):
-            date_list.append(raw_tsm['i'][0][0][0][date_num][0][0])
-            contract_code_list = []
-            for contract_num in range(1, 10):
-                contract_code_list.append(raw_tsm['i'][0][0][0][date_num][contract_num][0])
-            master_contract_code_list.append(contract_code_list)
-        self.contract_codes_df = pd.DataFrame(data=master_contract_code_list,
-                                              index=pd.DatetimeIndex(pd.to_datetime(date_list)))
-        self.contract_num = 1  # Equivalent to 10bps of vega notional for each contract
-        self.vega_notional = True
-        self.contract_month = 0
+        self.raw_tsm_df = pd.DataFrame(data=raw_tsm['x'], index=python_dates, columns=column_names)
         self.start_date = self.raw_tsm_df.index[0]
+
+        # self.raw_Close1 = self.raw_tsm_df['close1'].dropna(how='any')
+        #
+        # date_list = []
+        # master_contract_code_list = []
+        # for date_num in range(1, len(python_dates)):
+        #     date_list.append(raw_tsm['i'][0][0][0][date_num][0][0])
+        #     contract_code_list = []
+        #     for contract_num in range(1, 10):
+        #         contract_code_list.append(raw_tsm['i'][0][0][0][date_num][contract_num][0])
+        #     master_contract_code_list.append(contract_code_list)
+        # self.contract_codes_df = pd.DataFrame(data=master_contract_code_list,
+        #                                       index=pd.DatetimeIndex(pd.to_datetime(date_list)))
+        # self.contract_num = 1  # Equivalent to 10bps of vega notional for each contract
+        # self.vega_notional = True
+        # self.contract_month = 0
+        # self.start_date = self.raw_Close1.index[0]
+
+    @property
+    def contract_values(self):
+        fut_val = self.raw_tsm_df['close1']
+        fut_val[self.raw_tsm_df.loc[:, 'exp1'].shift(-1).diff() > 0] = self.raw_tsm_df['close2']
+        return fut_val
 
     @property
     def vix_ret_long(self):
-        contract_bool_list = [self.contract_codes_df.iloc[:, self.contract_month] == item for item in
-                              self.contract_codes_df.iloc[:, 0].unique()]
-        raw_contracts = [self.raw_tsm_df[item] for item in contract_bool_list]
-        contract_multiplier = 1000
-        notional_capital = 1000000
+        raw_fut = self.raw_tsm_df[['close1', 'close2', 'exp1']]
 
-        if self.vega_notional:
-            raw_returns = [(item.diff().dropna(how='any') * self.contract_num * contract_multiplier) / notional_capital
-                           for item in raw_contracts]
-            strat_name = 'contract{0}vega{1}bpsL'.format(self.contract_month, self.contract_num * 10)
-        else:
-            raw_returns = [item.pct_change().dropna(how='any') for item in raw_contracts]
-            strat_name = 'collateralized'
+        fut1_ret = raw_fut['close1'].pct_change()
+        fut1_fut2_ret = raw_fut['close1'] / raw_fut['close2'].shift(1) - 1
 
-        daily_returns = pd.concat(raw_returns, axis=0)
+        fut1_ret[raw_fut.loc[:, 'exp1'].diff() > 0] = fut1_fut2_ret
+        return fut1_ret.rename('long_month1')
 
-        return daily_returns.rename(strat_name)
+        # contract_bool_list = [self.contract_codes_df.iloc[:, self.contract_month] == item for item in
+        #                       self.contract_codes_df.iloc[:, 0].unique()]
+        # raw_contracts = [self.raw_Close1[item] for item in contract_bool_list]
+        # contract_multiplier = 1000
+        # notional_capital = 1000000
+        #
+        # if self.vega_notional:
+        #     raw_returns = [(item.diff().dropna(how='any') * self.contract_num * contract_multiplier) / notional_capital
+        #                    for item in raw_contracts]
+        #     strat_name = 'contract{0}vega{1}bpsL'.format(self.contract_month, self.contract_num * 10)
+        # else:
+        #     raw_returns = [item.pct_change().dropna(how='any') for item in raw_contracts]
+        #     strat_name = 'collateralized'
+        #
+        # daily_returns = pd.concat(raw_returns, axis=0)
+
+        # return daily_returns.rename(strat_name)
 
     @property
     def vix_idx_long(self):
@@ -256,7 +272,7 @@ class VixTSM:
     def vix_idx_short(self):
         idx = 1 / self.vix_idx_long
         idx = idx / idx[0] * 100
-        return idx.rename(idx.name[:-1] + 'S')
+        return idx.rename('short_month1')
 
     @property
     def vix_ret_short(self):
@@ -282,7 +298,7 @@ class CBOEIndex:
     def __init__(self):
         db_directory = UpdateSP500Data.DATA_BASE_PATH / 'xl'
         cboe_dict = {'cboe_vvix': 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/vvixtimeseries.csv',
-                          'cboe_skew': 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/skewdailyprices.csv'}
+                     'cboe_skew': 'http://www.cboe.com/publish/scheduledtask/mktdata/datahouse/skewdailyprices.csv'}
 
         [urlretrieve(value, db_directory / str(key + '.csv')) for key, value in cboe_dict.items()]
 
