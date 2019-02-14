@@ -314,7 +314,7 @@ class CBOEIndex:
 
 
 def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
-    "Retrieve closing price for S&P 500"
+    """Retrieve closing price for S&P 500"""
     daily_close = np.empty(len(in_dates))
     for i, item in enumerate(in_dates):
         dtf = feather.read_dataframe(in_dir + 'UnderlyingOptionsEODCalcs_' +
