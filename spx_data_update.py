@@ -207,72 +207,87 @@ class VixTSM:
         python_dates = matlab2datetime(raw_tsm['t'].squeeze())
         column_names = [item[0] for item in raw_tsm['h'][:, 0]]
         self.raw_tsm_df = pd.DataFrame(data=raw_tsm['x'], index=python_dates, columns=column_names)
+        self.raw_tsm_df = self.raw_tsm_df.iloc[:-1, :]  # remove last row
         self.start_date = self.raw_tsm_df.index[0]
+        self.rolled_return = None
+        self.rolled_expiries = None
+        self.rolled_future = None
+        self.days_2_exp = None
 
-        # self.raw_Close1 = self.raw_tsm_df['close1'].dropna(how='any')
-        #
-        # date_list = []
-        # master_contract_code_list = []
-        # for date_num in range(1, len(python_dates)):
-        #     date_list.append(raw_tsm['i'][0][0][0][date_num][0][0])
-        #     contract_code_list = []
-        #     for contract_num in range(1, 10):
-        #         contract_code_list.append(raw_tsm['i'][0][0][0][date_num][contract_num][0])
-        #     master_contract_code_list.append(contract_code_list)
-        # self.contract_codes_df = pd.DataFrame(data=master_contract_code_list,
-        #                                       index=pd.DatetimeIndex(pd.to_datetime(date_list)))
-        # self.contract_num = 1  # Equivalent to 10bps of vega notional for each contract
-        # self.vega_notional = True
-        # self.contract_month = 0
-        # self.start_date = self.raw_Close1.index[0]
+    def rolled_return(self, expiry_type):
+        expiry_dates = pd.to_datetime(self.raw_tsm_df['exp1'].astype(int), format='%Y%m%d')
+        returns = self.expiry_returns
+        if expiry_type == 'eom':
 
-    @property
-    def contract_values(self):
-        fut_val = self.raw_tsm_df['close1']
-        fut_val[self.raw_tsm_df.loc[:, 'exp1'].shift(-1).diff() > 0] = self.raw_tsm_df['close2']
-        return fut_val
+            eom_dates = returns.index[returns.reset_index().groupby(returns.index.to_period('M'))['index'].idxmax()]
+            last_month_end = eom_dates[-1] + pd.offsets.MonthEnd(0)
+            eom_dates = eom_dates[:-1]
+            eom_dates = eom_dates.insert(-1, last_month_end)
+            roll_dates = eom_dates.sort_values()
+        else:
+            # TODO: add checks to make sure roll_dates are subset of return index dates
+            roll_dates = expiry_dates + pd.offsets.BDay(- expiry_type)
 
-    @property
-    def vix_ret_long(self):
-        raw_fut = self.raw_tsm_df[['close1', 'close2', 'exp1']]
+        expiry_for_roll = []
+        for dts in expiry_dates:
+            idx = roll_dates.get_loc(dts, method='ffill')
+            expiry_for_roll.append(roll_dates[idx])
+        day_diff = expiry_dates.index - pd.DatetimeIndex(expiry_for_roll)
+        front_month_bool = day_diff.days <= 0
+        back_month_bool = ~front_month_bool
 
-        fut1_ret = raw_fut['close1'].pct_change()
-        fut1_fut2_ret = raw_fut['close1'] / raw_fut['close2'].shift(1) - 1
+        self.rolled_return = pd.concat([returns['close2'][back_month_bool], returns['close1'][front_month_bool]],
+                                       axis=0).sort_index()
+        self.rolled_expiries = pd.concat([self.raw_tsm_df['exp2'][back_month_bool],
+                                          self.raw_tsm_df['exp1'][front_month_bool]], axis=0).sort_index()
 
-        fut1_ret[raw_fut.loc[:, 'exp1'].diff() > 0] = fut1_fut2_ret
-        return fut1_ret.rename('long_month1')
+        self.days_2_exp = pd.to_datetime(self.rolled_expiries.astype(int), format='%Y%m%d') - self.rolled_expiries.index
 
-        # contract_bool_list = [self.contract_codes_df.iloc[:, self.contract_month] == item for item in
-        #                       self.contract_codes_df.iloc[:, 0].unique()]
-        # raw_contracts = [self.raw_Close1[item] for item in contract_bool_list]
-        # contract_multiplier = 1000
-        # notional_capital = 1000000
-        #
-        # if self.vega_notional:
-        #     raw_returns = [(item.diff().dropna(how='any') * self.contract_num * contract_multiplier) / notional_capital
-        #                    for item in raw_contracts]
-        #     strat_name = 'contract{0}vega{1}bpsL'.format(self.contract_month, self.contract_num * 10)
-        # else:
-        #     raw_returns = [item.pct_change().dropna(how='any') for item in raw_contracts]
-        #     strat_name = 'collateralized'
-        #
-        # daily_returns = pd.concat(raw_returns, axis=0)
+        self.rolled_future = pd.concat([self.raw_tsm_df['close2'][back_month_bool],
+                                        self.raw_tsm_df['close1'][front_month_bool]], axis=0).sort_index()
 
-        # return daily_returns.rename(strat_name)
 
     @property
-    def vix_idx_long(self):
+    def expiry_returns(self):
+        # Calculate returns assuming contract is held to expiry
+        close_cols = [col for col in self.raw_tsm_df.columns if 'close' in col]
+        close = self.raw_tsm_df[close_cols]
+        roll_rows = self.raw_tsm_df['exp1'].diff() > 0  # Day after expiry
+        returns = close.pct_change()
+        # Cross the columns on the day after expiry
+        column_shift_ret = close.divide(close.shift(periods=-1, axis='columns').shift(periods=1, axis='rows')) - 1
+        returns[roll_rows] = column_shift_ret[roll_rows]
+        return returns
+
+    # @property
+    # def contract_values(self):
+    #     fut_val = self.raw_tsm_df['close1']
+    #     fut_val[self.raw_tsm_df.loc[:, 'exp1'].shift(-1).diff() > 0] = self.raw_tsm_df['close2']
+    #     return fut_val
+
+    # @property
+    # def vix_ret_long(self):
+    #     raw_fut = self.raw_tsm_df[['close1', 'close2', 'exp1']]
+    #
+    #     fut1_ret = raw_fut['close1'].pct_change()
+    #     fut1_fut2_ret = raw_fut['close1'] / raw_fut['close2'].shift(1) - 1
+    #
+    #     fut1_ret[raw_fut.loc[:, 'exp1'].diff() > 0] = fut1_fut2_ret
+    #     return fut1_ret.rename('long_month1')
+
+    @property
+    def rolled_idx(self):
         start_idx = 100
-        cumulative_returns = cum_returns(self.vix_ret_long, start_idx)
+        cumulative_returns = cum_returns(self.rolled_return, start_idx)
         # Add back start of index
         cumulative_returns[self.start_date] = start_idx
         return cumulative_returns.reindex(cumulative_returns.index.sort_values())
 
     @property
-    def vix_idx_short(self):
-        idx = 1 / self.vix_idx_long
+    def rolled_idx_short(self):
+        idx = 1 / self.rolled_idx
         idx = idx / idx[0] * 100
-        return idx.rename('short_month1')
+        return idx.rename('short_idx')
 
     @property
     def vix_ret_short(self):

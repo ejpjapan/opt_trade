@@ -163,7 +163,8 @@ def get_asset(fund_dict, update=True):
         all_funds = [web.get_data_yahoo(key, 'DEC-31-70') for key, _ in fund_dict.items()]
         all_funds = [fund['Adj Close'] for fund in all_funds]
         all_funds = [fund.rename(fund_name) for fund, fund_name in zip(all_funds, fund_dict.values())]
-        [write_feather(fund.to_frame(), db_directory / (name + '.feather')) for fund, name in zip(all_funds, fund_dict.keys())]
+        [write_feather(fund.to_frame(), db_directory / (name + '.feather')) for fund, name in zip(all_funds,
+                                                                                                  fund_dict.keys())]
     all_funds = [read_feather(db_directory / (key + '.feather')) for key, _ in fund_dict.items()]
     return all_funds
 
