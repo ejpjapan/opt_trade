@@ -214,7 +214,7 @@ class VixTSM:
         self.rolled_future = None
         self.days_2_exp = None
 
-    def rolled_return(self, expiry_type):  # expiry_type is either string or positive integer
+    def rolled_future_return(self, expiry_type):  # expiry_type is either string or positive integer
         expiry_dates = pd.to_datetime(self.raw_tsm_df['exp1'].astype(int), format='%Y%m%d')
         returns = self.expiry_returns
         if expiry_type == 'eom':
