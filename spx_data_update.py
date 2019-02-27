@@ -224,7 +224,7 @@ class VixTSM:
             eom_dates = eom_dates.insert(-1, last_month_end)
             roll_dates = eom_dates.sort_values()
         elif expiry_type == 'exp':
-            roll_dates = expiry_dates
+            roll_dates = expiry_dates.index
         else:
             # TODO: add checks to make sure roll_dates are subset of return index dates
             roll_dates = expiry_dates + pd.offsets.BDay(- expiry_type)
@@ -259,22 +259,6 @@ class VixTSM:
         returns[roll_rows] = column_shift_ret[roll_rows]
         return returns
 
-    # @property
-    # def contract_values(self):
-    #     fut_val = self.raw_tsm_df['close1']
-    #     fut_val[self.raw_tsm_df.loc[:, 'exp1'].shift(-1).diff() > 0] = self.raw_tsm_df['close2']
-    #     return fut_val
-
-    # @property
-    # def vix_ret_long(self):
-    #     raw_fut = self.raw_tsm_df[['close1', 'close2', 'exp1']]
-    #
-    #     fut1_ret = raw_fut['close1'].pct_change()
-    #     fut1_fut2_ret = raw_fut['close1'] / raw_fut['close2'].shift(1) - 1
-    #
-    #     fut1_ret[raw_fut.loc[:, 'exp1'].diff() > 0] = fut1_fut2_ret
-    #     return fut1_ret.rename('long_month1')
-
     @property
     def rolled_idx(self):
         start_idx = 100
@@ -290,7 +274,7 @@ class VixTSM:
         return idx.rename('short_idx')
 
     @property
-    def vix_ret_short(self):
+    def rolled_return_short(self):
         return self.rolled_idx_short.pct_change()
 
 
