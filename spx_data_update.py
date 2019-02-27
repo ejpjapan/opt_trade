@@ -214,16 +214,17 @@ class VixTSM:
         self.rolled_future = None
         self.days_2_exp = None
 
-    def rolled_return(self, expiry_type):
+    def rolled_return(self, expiry_type):  # expiry_type is either string or positive integer
         expiry_dates = pd.to_datetime(self.raw_tsm_df['exp1'].astype(int), format='%Y%m%d')
         returns = self.expiry_returns
         if expiry_type == 'eom':
-
             eom_dates = returns.index[returns.reset_index().groupby(returns.index.to_period('M'))['index'].idxmax()]
             last_month_end = eom_dates[-1] + pd.offsets.MonthEnd(0)
             eom_dates = eom_dates[:-1]
             eom_dates = eom_dates.insert(-1, last_month_end)
             roll_dates = eom_dates.sort_values()
+        elif expiry_type == 'exp':
+            roll_dates = expiry_dates
         else:
             # TODO: add checks to make sure roll_dates are subset of return index dates
             roll_dates = expiry_dates + pd.offsets.BDay(- expiry_type)
@@ -245,7 +246,6 @@ class VixTSM:
 
         self.rolled_future = pd.concat([self.raw_tsm_df['close2'][back_month_bool],
                                         self.raw_tsm_df['close1'][front_month_bool]], axis=0).sort_index()
-
 
     @property
     def expiry_returns(self):
@@ -291,7 +291,7 @@ class VixTSM:
 
     @property
     def vix_ret_short(self):
-        return self.vix_idx_short.pct_change()
+        return self.rolled_idx_short.pct_change()
 
 
 class SP500Index:
