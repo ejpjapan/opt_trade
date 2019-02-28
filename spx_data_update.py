@@ -214,7 +214,8 @@ class VixTSM:
 
     def _rolled_future_return(self):
         expiry_dates = pd.to_datetime(self.raw_tsm_df['exp1'].astype(int), format='%Y%m%d')
-        returns = self.expiry_returns
+        returns = self._expiry_returns
+        days_2_exp = self._expiration_days_2_expiry
         if self.expiry_type == 'eom':
             eom_dates = returns.index[returns.reset_index().groupby(returns.index.to_period('M'))['index'].idxmax()]
             last_month_end = eom_dates[-1] + pd.offsets.MonthEnd(0)
@@ -223,7 +224,8 @@ class VixTSM:
             roll_dates = eom_dates.sort_values()
         else:
             # TODO: add checks to make sure roll_dates are subset of return index dates
-            roll_dates = expiry_dates.index + pd.offsets.BDay(- self.expiry_type)
+            expiry_dates_unique = pd.to_datetime(self.raw_tsm_df['exp1'].unique().astype(int), format='%Y%m%d')
+            roll_dates = expiry_dates_unique - pd.offsets.BDay(self.expiry_type)
 
         expiry_for_roll = []
         for dts in expiry_dates:
@@ -239,14 +241,15 @@ class VixTSM:
         rolled_expiries = pd.concat([self.raw_tsm_df['exp2'][back_month_bool],
                                      self.raw_tsm_df['exp1'][front_month_bool]], axis=0).sort_index()
 
-        days_2_exp = pd.to_datetime(rolled_expiries.astype(int), format='%Y%m%d') - rolled_expiries.index
+        days_2_exp = pd.concat([days_2_exp['exp2'][back_month_bool],
+                                days_2_exp['exp1'][front_month_bool]], axis=0).sort_index()
 
         rolled_future = pd.concat([self.raw_tsm_df['close2'][back_month_bool],
                                    self.raw_tsm_df['close1'][front_month_bool]], axis=0).sort_index()
         return rolled_return, rolled_expiries, days_2_exp, rolled_future
 
     @property
-    def expiry_returns(self):
+    def _expiry_returns(self):
         # Calculate returns assuming contract is held to expiry
         close_cols = [col for col in self.raw_tsm_df.columns if 'close' in col]
         close = self.raw_tsm_df[close_cols]
@@ -256,6 +259,23 @@ class VixTSM:
         column_shift_ret = close.divide(close.shift(periods=-1, axis='columns').shift(periods=1, axis='rows')) - 1
         returns[roll_rows] = column_shift_ret[roll_rows]
         return returns
+
+    @property
+    def _expiration_days_2_expiry(self):
+        # TODO: This is an approximation that assumes there is only one day between expiration date and last day of
+        #  contract
+        # Calculate expiry date assuming contract is held to expiry
+        exp_cols = [col for col in self.raw_tsm_df.columns if 'exp' in col]
+        expiries = self.raw_tsm_df[exp_cols].fillna(0).astype(int).apply(pd.to_datetime,
+                                                                       format='%Y%m%d',
+                                                                       errors='coerce')
+        roll_rows = self.raw_tsm_df['exp1'].diff() > 0  # Day after expiry
+        expiry_dates = expiries.subtract(self.raw_tsm_df.index, axis=0)
+        # Cross the columns on the day after expiry
+        column_shift_expiries = expiry_dates.shift(periods=-1, axis='columns').shift(periods=1, axis='rows')
+        column_shift_expiries = column_shift_expiries - pd.Timedelta(days=1)
+        expiry_dates[roll_rows.shift(-1).fillna(False)] = column_shift_expiries[roll_rows.shift(-1).fillna(False)]
+        return expiry_dates
 
     @property
     def rolled_idx(self):
