@@ -198,7 +198,7 @@ class ClosingPriceHistory:
 
 
 class VixTSM:
-    def __init__(self):
+    def __init__(self, expiry_type=0):
         """ Class to retrieve tsm vix futures data and create return and index series"""
         try:
             raw_tsm = loadmat('/Volumes/ExtraStorage/base/db/fut/vix.mat')
@@ -209,25 +209,21 @@ class VixTSM:
         self.raw_tsm_df = pd.DataFrame(data=raw_tsm['x'], index=python_dates, columns=column_names)
         self.raw_tsm_df = self.raw_tsm_df.iloc[:-1, :]  # remove last row
         self.start_date = self.raw_tsm_df.index[0]
-        self.rolled_return = None
-        self.rolled_expiries = None
-        self.rolled_future = None
-        self.days_2_exp = None
+        self.expiry_type = expiry_type  # expiry_type is either string or positive integer
+        self.rolled_return, self.rolled_expiries, self.days_2_exp, self.rolled_future = self._rolled_future_return()
 
-    def rolled_future_return(self, expiry_type):  # expiry_type is either string or positive integer
+    def _rolled_future_return(self):
         expiry_dates = pd.to_datetime(self.raw_tsm_df['exp1'].astype(int), format='%Y%m%d')
         returns = self.expiry_returns
-        if expiry_type == 'eom':
+        if self.expiry_type == 'eom':
             eom_dates = returns.index[returns.reset_index().groupby(returns.index.to_period('M'))['index'].idxmax()]
             last_month_end = eom_dates[-1] + pd.offsets.MonthEnd(0)
             eom_dates = eom_dates[:-1]
             eom_dates = eom_dates.insert(-1, last_month_end)
             roll_dates = eom_dates.sort_values()
-        elif expiry_type == 'exp':
-            roll_dates = expiry_dates.index
         else:
             # TODO: add checks to make sure roll_dates are subset of return index dates
-            roll_dates = expiry_dates + pd.offsets.BDay(- expiry_type)
+            roll_dates = expiry_dates.index + pd.offsets.BDay(- self.expiry_type)
 
         expiry_for_roll = []
         for dts in expiry_dates:
@@ -237,15 +233,17 @@ class VixTSM:
         front_month_bool = day_diff.days <= 0
         back_month_bool = ~front_month_bool
 
-        self.rolled_return = pd.concat([returns['close2'][back_month_bool], returns['close1'][front_month_bool]],
-                                       axis=0).sort_index()
-        self.rolled_expiries = pd.concat([self.raw_tsm_df['exp2'][back_month_bool],
-                                          self.raw_tsm_df['exp1'][front_month_bool]], axis=0).sort_index()
+        rolled_return = pd.concat([returns['close2'][back_month_bool], returns['close1'][front_month_bool]],
+                                  axis=0).sort_index()
 
-        self.days_2_exp = pd.to_datetime(self.rolled_expiries.astype(int), format='%Y%m%d') - self.rolled_expiries.index
+        rolled_expiries = pd.concat([self.raw_tsm_df['exp2'][back_month_bool],
+                                     self.raw_tsm_df['exp1'][front_month_bool]], axis=0).sort_index()
 
-        self.rolled_future = pd.concat([self.raw_tsm_df['close2'][back_month_bool],
-                                        self.raw_tsm_df['close1'][front_month_bool]], axis=0).sort_index()
+        days_2_exp = pd.to_datetime(rolled_expiries.astype(int), format='%Y%m%d') - rolled_expiries.index
+
+        rolled_future = pd.concat([self.raw_tsm_df['close2'][back_month_bool],
+                                   self.raw_tsm_df['close1'][front_month_bool]], axis=0).sort_index()
+        return rolled_return, rolled_expiries, days_2_exp, rolled_future
 
     @property
     def expiry_returns(self):
