@@ -84,7 +84,7 @@ class GetRawCBOEOptionData:
                 zip_ref.close()  # close file
 
     def __get_zip_files(self, output_directory, order_string):
-        """Download zip all zip files from order_string to output_directory"""
+        """Download zip files from order_string to output_directory"""
         ftp = self.__open_ftp()
         ftp.cwd(order_string)
         ftp_file_list = ftp.nlst()
@@ -214,10 +214,10 @@ class VixTSM:
         self.rolled_return, self.rolled_expiries, self.days_2_exp, self.rolled_future = self._rolled_future_return()
 
     def _rolled_future_return(self):
+        """Returns arithmetic return from long position in vix future"""
         expiry_dates = pd.to_datetime(self.raw_tsm_df['exp1'].astype(int), format='%Y%m%d')
         returns = self._expiry_returns
         days_2_exp = self._expiration_days_2_expiry
-        close = self._expiration_rolled_future
         if self.expiry_type == 'eom':
             eom_dates = returns.index[returns.reset_index().groupby(returns.index.to_period('M'))['index'].idxmax()]
             last_month_end = eom_dates[-1] + pd.offsets.MonthEnd(0)
@@ -234,11 +234,12 @@ class VixTSM:
             idx = roll_dates.get_loc(dts, method='ffill')
             expiry_for_roll.append(roll_dates[idx])
         day_diff = expiry_dates.index - pd.DatetimeIndex(expiry_for_roll)
-        front_month_bool = day_diff.days <= 0
+        front_month_bool = day_diff.days < 0
         back_month_bool = ~front_month_bool
 
         rolled_return = pd.concat([returns['close2'][back_month_bool], returns['close1'][front_month_bool]],
                                   axis=0).sort_index()
+        rolled_return[0] = np.nan  # replace first empty observation with NaN
 
         rolled_expiries = pd.concat([self.raw_tsm_df['exp2'][back_month_bool],
                                      self.raw_tsm_df['exp1'][front_month_bool]], axis=0).sort_index()
@@ -246,19 +247,16 @@ class VixTSM:
         days_2_exp = pd.concat([days_2_exp['exp2'][back_month_bool],
                                 days_2_exp['exp1'][front_month_bool]], axis=0).sort_index()
 
-        # rolled_future = pd.concat([self.raw_tsm_df['close2'][back_month_bool],
-        #                            self.raw_tsm_df['close1'][front_month_bool]], axis=0).sort_index()
-
-        rolled_future = pd.concat([close['close2'][back_month_bool], close['close1'][front_month_bool]],
-                                  axis=0).sort_index()
+        rolled_future = pd.concat([self.raw_tsm_df['close2'][back_month_bool],
+                                   self.raw_tsm_df['close1'][front_month_bool]], axis=0).sort_index()
 
         return rolled_return, rolled_expiries, days_2_exp, rolled_future
 
     @property
     def _expiry_returns(self):
-        # Calculate returns assuming contract is held to expiry
+        """ Returns future arithmetic return if contracts are held to expiry"""
         close_cols = [col for col in self.raw_tsm_df.columns if 'close' in col]
-        close = self.raw_tsm_df[close_cols]
+        close = self.raw_tsm_df[close_cols].copy()
         roll_rows = self.raw_tsm_df['exp1'].diff() > 0  # Day after expiry
         returns = close.pct_change()
         # Cross the columns on the day after expiry
@@ -268,49 +266,50 @@ class VixTSM:
 
     @property
     def _expiration_days_2_expiry(self):
+        """Returns number of days to expiry for each contract month"""
         # TODO: This is an approximation that assumes there is only one day between expiration date and last day of
         #  contract
-        # Calculate expiry date assuming contract is held to expiry
+        # exp_cols = [col for col in self.raw_tsm_df.columns if 'exp' in col]
+        # expiries = self.raw_tsm_df[exp_cols].fillna(0).astype(int).apply(pd.to_datetime,
+        #                                                                  format='%Y%m%d',
+        #                                                                  errors='coerce')
+        # expiry_dates = expiries.subtract(self.raw_tsm_df.index, axis=0)
+        # # Dates in TSM are last trading day so add one day for expiration
+        # expiry_dates = expiry_dates + pd.Timedelta(days=1)
+        # expiry_days = pd.concat([expiry_dates[cols].dt.days for cols in expiry_dates.columns], axis=1)
+
         exp_cols = [col for col in self.raw_tsm_df.columns if 'exp' in col]
         expiries = self.raw_tsm_df[exp_cols].fillna(0).astype(int).apply(pd.to_datetime,
                                                                          format='%Y%m%d',
                                                                          errors='coerce')
+        # Dates in TSM are last trading day so add one day for expiration
+        expiry_list = [expiries[cols].add(pd.Timedelta(days=1)) for cols in expiries.columns]
+        num_bus_days = [np.busday_count(item.index.values.astype('<M8[D]'), item.values.astype('<M8[D]')) for item in
+                    expiry_list[:-1]]
+        num_bus_days = pd.DataFrame(index=expiries.index, data=np.transpose(num_bus_days), columns=expiries.columns[:-1])
+        return num_bus_days
 
-        roll_rows = self.raw_tsm_df['exp1'].diff() > 0  # Day after expiry
-        expiry_dates = expiries.subtract(self.raw_tsm_df.index, axis=0)
-        column_shift_expiries = expiry_dates.shift(periods=-1, axis='columns').shift(periods=1, axis='rows')
-        column_shift_expiries = column_shift_expiries - pd.Timedelta(days=1)
-        # Cross the columns on the day BEFORE expiry
-        expiry_dates[roll_rows.shift(-1).fillna(False)] = column_shift_expiries[roll_rows.shift(-1).fillna(False)]
-        return expiry_dates
-
-    @property
-    def _expiration_rolled_future(self):
-        # Get futures closing price assuming contract is held to expiry
-        close_cols = [col for col in self.raw_tsm_df.columns if 'close' in col]
-        close = self.raw_tsm_df[close_cols]
-        roll_rows = self.raw_tsm_df['exp1'].diff() > 0  # Day after expiry
-        column_shift_close = close.shift(periods=-1, axis='columns').shift(periods=1, axis='rows')
-        close[roll_rows] = column_shift_close[roll_rows]
-        return close
 
     @property
     def rolled_idx(self):
+        """Returns cumulative return index from long position in vix future"""
         start_idx = 100
         cumulative_returns = cum_returns(self.rolled_return, start_idx)
         # Add back start of index
         cumulative_returns[self.start_date] = start_idx
         idx = cumulative_returns.reindex(cumulative_returns.index.sort_values())
-        return idx.rename('long_idx')
+        return idx.rename('long_vix')
 
     @property
     def rolled_idx_short(self):
+        """Returns cumulative return index from short position in vix future"""
         idx = 1 / self.rolled_idx
         idx = idx / idx[0] * 100
-        return idx.rename('short_idx')
+        return idx.rename('short_vix')
 
     @property
     def rolled_return_short(self):
+        """Returns arithmetic return from short position in vix future"""
         return self.rolled_idx_short.pct_change()
 
 
