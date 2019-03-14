@@ -1,5 +1,4 @@
 import os
-import plistlib
 import re
 import zipfile
 from ftplib import FTP
@@ -12,6 +11,8 @@ import quandl
 from scipy.io import loadmat
 from pyfolio.timeseries import cum_returns
 from urllib.request import urlretrieve
+import plistlib
+
 
 from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime, get_asset
 from ib_insync import IB, util, Index
@@ -347,6 +348,17 @@ class CBOEIndex:
         self.vvix, self.skew = [item.ffill() for item in [vvix, skew]]
 
 
+# class IbWrapper:
+#     def __init__(self, client_id=30):
+#         self.ib = IB()
+#         try:
+#             self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
+#         except:
+#             self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
+
+
+
+
 def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
     """Retrieve closing price for S&P 500"""
     daily_close = np.empty(len(in_dates))
@@ -444,14 +456,18 @@ def scrape_sp5_div_yield():
 
 
 def quandle_api():
-    return config_ket('Quandl')
+    return config_key('Quandl')
 
 
 def data_shop_login():
-    return config_ket('cbeoDataShop_dict')
+    return config_key('cbeoDataShop_dict')
 
 
-def config_ket(dict_key: str):
+def illiquid_equity(discount=0.5):
+    return sum(config_key('illiquid_equity').values()) * discount
+
+
+def config_key(dict_key: str):
     file_name = UpdateSP500Data.DATA_BASE_PATH / 'config.plist'
     assert (file_name.is_file())
     f = open(str(file_name), 'rb')

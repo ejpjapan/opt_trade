@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 from ib_insync import IB, Index, Option
-from option_utilities import third_fridays, USSimpleYieldCurve, get_theoretical_strike
+from option_utilities import time_it, USSimpleYieldCurve, get_theoretical_strike
 from spx_data_update import DividendYieldHistory
 from ib_insync.util import isNan
 import time

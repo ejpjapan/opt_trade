@@ -101,7 +101,7 @@ class VixForecast:
         if not isinstance(y, pd.Series):
             y = pd.Series(y)
         with plt.style.context(style):
-            fig = plt.figure(figsize=figsize)
+            _ = plt.figure(figsize=figsize)
             mpl.rcParams['font.sans-serif'] = 'Roboto Condensed'
             mpl.rcParams['font.family'] = 'sans-serif'
             layout = (3, 2)
