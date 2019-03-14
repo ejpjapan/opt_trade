@@ -9,7 +9,7 @@ import statsmodels.api as sm
 import scipy.stats as scs
 # from arch import arch_model
 import matplotlib.gridspec as gridspec
-from ib_insync import IB, Future, util
+from ib_insync import Future, util
 # import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 # import plistlib
 # import sys
 
-from spx_data_update import ImpliedVolatilityHistory, SP500Index
+from spx_data_update import ImpliedVolatilityHistory, SP500Index, IbWrapper
 
 from option_utilities import PlotConstants, chart_format
 
@@ -124,8 +124,8 @@ class VixForecast:
 
 
 def get_futures(contract_str, remove_weekly=False):
-    ib = IB()
-    ib.connect('127.0.0.1', port=4001, clientId=30)
+    ibw = IbWrapper()
+    ib = ibw.ib
     vix = Future(contract_str, includeExpired=False)
     cds = ib.reqContractDetails(vix)
 

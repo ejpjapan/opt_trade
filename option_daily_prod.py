@@ -8,11 +8,10 @@ Created on Tue Nov 13 08:33:48 2018
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
-from ib_insync import IB, Index, Option
+from ib_insync import Index, Option
 from option_utilities import time_it, USSimpleYieldCurve, get_theoretical_strike
-from spx_data_update import DividendYieldHistory
+from spx_data_update import DividendYieldHistory, IbWrapper
 from ib_insync.util import isNan
-import time
 
 
 class OptionAsset(ABC):
@@ -22,8 +21,8 @@ class OptionAsset(ABC):
         exchange_vol = exchange_dict['exchange_vol']
         exchange_opt = exchange_dict['exchange_opt']
         underlying_index = Index(mkt_symbol, exchange_mkt)
-        ib = IB()
-        ib.connect('127.0.0.1', port, client_id)
+        ibw = IbWrapper()
+        ib = ibw.ib
         self.underlying_qc = self.__get_underlying_qc(underlying_index, ib)
         self.sigma_qc = self.get_sigma_qc(vol_symbol, ib, exchange_vol)
         self.chain = self.__get_option_chain(underlying_index, ib, exchange_opt)
@@ -251,8 +250,8 @@ class OptionMarket:
             Raises:
                 ."""
 
-        ib = IB()
-        ib.connect('127.0.0.1', port=4001, clientId=30)
+        ibw = IbWrapper()
+        ib = ibw.ib
         liquidation_value = self._get_account_tag(ib, 'NetLiquidationByCurrency')
         # TO DO: this will not work when underlying does not have implied vol index
         # this will happen when we need to calculate an implied vol index

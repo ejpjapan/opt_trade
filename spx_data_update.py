@@ -393,8 +393,8 @@ def get_vix():
     """Fetch vix from Interactive Brokers and append to history'''
     :return: Dataframe
     """
-    ib = IB()
-    ib.connect('127.0.0.1', port=4001, clientId=30)
+    ibw = IbWrapper()
+    ib = ibw.ib
     vix = Index('VIX')
     cds = ib.reqContractDetails(vix)
 
@@ -493,6 +493,18 @@ def feather_clean(in_directory):
             # idx2 = option_df['root'] == 'SPXM'
             # option_df = option_df.drop(option_df.index[idx2])
             feather.write_dataframe(option_df, str(in_directory / item))
+
+
+class IbWrapper:
+    def __init__(self, client_id=30):
+        """Wrapper function for Interactive Broker API connection"""
+        self.ib = IB()
+        try:
+            # IB Gateway
+            self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
+        except ConnectionRefusedError:
+            # TWS
+            self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
 
 
 def main():
