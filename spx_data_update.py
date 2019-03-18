@@ -504,7 +504,12 @@ class IbWrapper:
             self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
         except ConnectionRefusedError:
             # TWS
-            self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
+            try:
+                self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
+            # TWS Paper
+            except ConnectionRefusedError:
+                print('Warning- Connected to Paper Portfolio - Account Values are hypothetical')
+                self.ib.connect('127.0.0.1', port=7497, clientId=client_id)
 
 
 def main():
