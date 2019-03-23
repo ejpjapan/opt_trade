@@ -348,16 +348,6 @@ class CBOEIndex:
         self.vvix, self.skew = [item.ffill() for item in [vvix, skew]]
 
 
-# class IbWrapper:
-#     def __init__(self, client_id=30):
-#         self.ib = IB()
-#         try:
-#             self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
-#         except:
-#             self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
-
-
-
 
 def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
     """Retrieve closing price for S&P 500"""
