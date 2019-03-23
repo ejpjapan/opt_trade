@@ -20,12 +20,14 @@ class OptionAsset(ABC):
         exchange_mkt = exchange_dict['exchange_mkt']
         exchange_vol = exchange_dict['exchange_vol']
         exchange_opt = exchange_dict['exchange_opt']
+        self.trading_class = exchange_dict['trading_class']
         underlying_index = Index(mkt_symbol, exchange_mkt)
         ibw = IbWrapper()
         ib = ibw.ib
         self.underlying_qc = self.__get_underlying_qc(underlying_index, ib)
         self.sigma_qc = self.get_sigma_qc(vol_symbol, ib, exchange_vol)
         self.chain = self.__get_option_chain(underlying_index, ib, exchange_opt)
+
         ib.disconnect()
     """"" Abstract option asset container - Each underlying instrument is an instance of the OptionAsset class 
     and each instance is the only argument for the option_market Class. """
@@ -78,7 +80,8 @@ class SpxOptionAsset(OptionAsset):
         """"" Asset container for SPX  - S&P 500 Index. """
         mkt_symbol = 'SPX'
         vol_symbol = 'VIX'
-        exchange_dict = {'exchange_mkt': 'CBOE', 'exchange_vol': 'CBOE', 'exchange_opt': 'CBOE'}
+        exchange_dict = {'exchange_mkt': 'CBOE', 'exchange_vol': 'CBOE', 'exchange_opt': 'CBOE',
+                         'trading_class': 'SPX'}  # other choice is SPXW
         super().__init__(mkt_symbol, vol_symbol, exchange_dict)
 
     def get_sigma_qc(self, vol_symbol, ib, exchange):
@@ -294,7 +297,7 @@ class OptionMarket:
 
         expiration_date_list = last_trade_dates_df['expirations'].iloc[0:num_expiries].tolist()
         theoretical_strike_list = theoretical_strikes.flatten().tolist()
-        expiration_date_list = [item for item in expiration_date_list for i in range(len(z_score))]
+        expiration_date_list = [item for item in expiration_date_list for _ in range(len(z_score))]
         contracts = [self._get_closest_valid_contract(strike, expiration, ib, right) for strike, expiration in
                      zip(theoretical_strike_list, expiration_date_list)]
         contracts_flat = [item for sublist in contracts for item in sublist]
@@ -352,7 +355,8 @@ class OptionMarket:
         strikes_sorted = sorted(list(self.option_asset.chain.strikes),
                                 key=lambda x: abs(x - theoretical_strike))
         ii = 0
-        contract = Option(symbol, expiration, strikes_sorted[ii], right, exchange)
+        contract = Option(symbol, expiration, strikes_sorted[ii], right, exchange,
+                          tradingClass=self.option_asset.trading_class)
         qualified_contract = ib.qualifyContracts(contract)
         while len(qualified_contract) == 0 or ii > 1000:
             ii = ii + 1
