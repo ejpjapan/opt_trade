@@ -63,7 +63,7 @@ class GetRawCBOEOptionData:
         self.root_symbols_str = root_symbols_df['root_symbols'].dropna().str.strip().values
 
     @staticmethod
-    def __open_ftp():
+    def open_ftp():
         user_dict = data_shop_login()
         "Open ftp connection to CBOE datashop"
         ftp = FTP(host='ftp.datashop.livevol.com',
@@ -86,7 +86,7 @@ class GetRawCBOEOptionData:
 
     def __get_zip_files(self, output_directory, order_string):
         """Download zip files from order_string to output_directory"""
-        ftp = self.__open_ftp()
+        ftp = self.open_ftp()
         ftp.cwd(order_string)
         ftp_file_list = ftp.nlst()
         for file in ftp_file_list:

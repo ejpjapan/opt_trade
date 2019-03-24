@@ -1,6 +1,6 @@
 # from IPython.display import display_html, HTML
 import pyfolio as pf
-# import numpy as np
+import numpy as np
 import pandas as pd
 from statsmodels.tsa.arima_model import ARMA
 # import statsmodels.formula.api as smf
@@ -13,12 +13,16 @@ from ib_insync import Future, util
 # import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import os
+import zipfile
+
+
 # import nest_asyncio
 # from time import time
 # import plistlib
 # import sys
 
-from spx_data_update import ImpliedVolatilityHistory, SP500Index, IbWrapper
+from spx_data_update import UpdateSP500Data, ImpliedVolatilityHistory, SP500Index, IbWrapper, GetRawCBOEOptionData
 
 from option_utilities import PlotConstants, chart_format
 
@@ -158,3 +162,48 @@ def get_futures(contract_str, remove_weekly=False):
     future_series = future_series.transpose().sort_index()
     future_series.columns = pd.to_datetime(future_series.columns )
     return future_series, contract_df
+
+
+class UpdateVIXData:
+
+    def __init__(self):
+        self.order_string = '/order_000008108/item_000010804/'
+        data_directory = UpdateSP500Data.DATA_BASE_PATH / 'CBOERawVixData'
+        self.zip_directory, self.csv_directory, self.feather_directory = [data_directory / item for item in
+                                                                          ['zip', 'csv', 'feather']]
+        self.price_columns = ['open_bid', 'open_ask', 'avg_bid', 'avg_ask', 'close_bid',
+                              'close_ask', 'open_px', 'close_px', 'low_px', 'high_px']
+
+    def download_cboe_vix(self):
+        ftp = GetRawCBOEOptionData.open_ftp()
+        # Download zip files
+        ftp.cwd(self.order_string)
+        ftp_file_list = ftp.nlst()
+        for file in ftp_file_list:
+            if file.endswith('.zip'):
+                print("Downloading..." + file)
+                ftp.retrbinary("RETR " + file, open(self.zip_directory / file, 'wb').write)
+        ftp.close()
+
+        # Unzip to csv
+        for item in os.listdir(self.zip_directory):  # loop through items in dir
+            if item.endswith('.zip'):
+                file_name = self.zip_directory / item  # get full path of files
+                zip_ref = zipfile.ZipFile(file_name)  # create zipfile object
+                try:
+                    zip_ref.extractall(self.csv_directory)  # extract file to dir
+                except zipfile.BadZipFile as err:
+                    print("Zipfile error: {0} for {1}".format(err, item))
+                zip_ref.close()  # close file
+        num_csv, num_zip = len(os.listdir(self.csv_directory)), len(os.listdir(self.zip_directory))
+        assert (num_csv == num_zip)
+
+    @property
+    def raw_df(self):
+        dataframe_list = []
+        for item in os.listdir(self.csv_directory):
+            if item.endswith('.csv'):
+                future_df = pd.read_csv(self.csv_directory / item)
+                dataframe_list.append(future_df)
+        raw_df = pd.concat(dataframe_list, axis=0, ignore_index=True)
+        return raw_df
