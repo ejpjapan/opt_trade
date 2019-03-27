@@ -15,7 +15,7 @@ from ib_insync.util import isNan
 
 
 class OptionAsset(ABC):
-    def __init__(self, mkt_symbol, vol_symbol, exchange_dict, port=4001, client_id=20):
+    def __init__(self, mkt_symbol, vol_symbol, exchange_dict):
         """Abstract class for option asset container"""
         exchange_mkt = exchange_dict['exchange_mkt']
         exchange_vol = exchange_dict['exchange_vol']
@@ -76,12 +76,12 @@ class OptionAsset(ABC):
 
 
 class SpxOptionAsset(OptionAsset):
-    def __init__(self):
+    def __init__(self, trading_class='SPX'):
         """"" Asset container for SPX  - S&P 500 Index. """
         mkt_symbol = 'SPX'
         vol_symbol = 'VIX'
         exchange_dict = {'exchange_mkt': 'CBOE', 'exchange_vol': 'CBOE', 'exchange_opt': 'CBOE',
-                         'trading_class': 'SPX'}  # other choice is SPXW
+                         'trading_class': trading_class}  # other choice is SPXW
         super().__init__(mkt_symbol, vol_symbol, exchange_dict)
 
     def get_sigma_qc(self, vol_symbol, ib, exchange):

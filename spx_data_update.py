@@ -348,7 +348,6 @@ class CBOEIndex:
         self.vvix, self.skew = [item.ffill() for item in [vvix, skew]]
 
 
-
 def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
     """Retrieve closing price for S&P 500"""
     daily_close = np.empty(len(in_dates))
