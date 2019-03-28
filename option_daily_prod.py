@@ -26,7 +26,7 @@ class OptionAsset(ABC):
         ib = ibw.ib
         self.underlying_qc = self.__get_underlying_qc(underlying_index, ib)
         self.sigma_qc = self.get_sigma_qc(vol_symbol, ib, exchange_vol)
-        self.chain = self.__get_option_chain(underlying_index, ib, exchange_opt)
+        self.chain = self.get_option_chain(underlying_index, ib, exchange_opt)
 
         ib.disconnect()
     """"" Abstract option asset container - Each underlying instrument is an instance of the OptionAsset class 
@@ -39,17 +39,7 @@ class OptionAsset(ABC):
         assert(len(index_qc) == 1)
         return index_qc[0]
 
-    @staticmethod
-    def __get_option_chain(underlying_index, ib, exchange):
-        """Retrieve IB qualifying options contracts for an index"""
-        all_chains = ib.reqSecDefOptParams(underlying_index.symbol, '',
-                                           underlying_index.secType,
-                                           underlying_index.conId)
-        # TO DO Consider moving this to abstract function as different markets will have different
-        # conditions around which options to select
-        chain = next(c for c in all_chains if c.tradingClass == underlying_index.symbol and c.exchange == exchange)
-        return chain
-
+    @property
     def get_expirations(self):
         """Retrieve Dataframe of option expirations (last trading day) for option chain in object"""
         expirations = pd.DataFrame(list(self.chain.expirations),
@@ -60,6 +50,12 @@ class OptionAsset(ABC):
         # remove negative when latest expiry is today
         expirations = expirations[expirations['year_fraction'] > 0]
         return expirations.sort_index()
+
+    @abstractmethod
+    def get_option_chain(self, underlying_index, ib, exchange):
+        """Abstract method"""
+        #
+    pass
 
     @abstractmethod
     def get_sigma_qc(self, vol_symbol, ib, exchange):
@@ -91,6 +87,16 @@ class SpxOptionAsset(OptionAsset):
         assert(len(sigma_qc) == 1)
         return sigma_qc[0]
 
+    def get_option_chain(self, underlying_index, ib, exchange):
+        """Retrieve IB qualifying options contracts for an index"""
+        all_chains = ib.reqSecDefOptParams(underlying_index.symbol, '',
+                                           underlying_index.secType,
+                                           underlying_index.conId)
+        # TO DO Consider moving this to abstract function as different markets will have different
+        # conditions around which options to select
+        chain = next(c for c in all_chains if c.tradingClass == self.trading_class and c.exchange == exchange)
+        return chain
+
     @staticmethod
     def get_dividend_yield():
         """Gets latest dividend yield"""
@@ -114,6 +120,17 @@ class RSL2OptionAsset(OptionAsset):
         sigma_qc = ib.qualifyContracts(sigma_index)
         assert(len(sigma_qc) == 1)
         return sigma_qc[0]
+
+    @staticmethod
+    def get_option_chain(underlying_index, ib, exchange):
+        """Retrieve IB qualifying options contracts for an index"""
+        all_chains = ib.reqSecDefOptParams(underlying_index.symbol, '',
+                                           underlying_index.secType,
+                                           underlying_index.conId)
+        # TO DO Consider moving this to abstract function as different markets will have different
+        # conditions around which options to select
+        chain = next(c for c in all_chains if c.tradingClass == underlying_index.symbol and c.exchange == exchange)
+        return chain
 
     @staticmethod
     def get_dividend_yield():
@@ -282,7 +299,7 @@ class OptionMarket:
         """
         # option_expiry_1 = third_fridays(self.trade_date, num_expiries)
 
-        last_trade_dates_df = self.option_asset.get_expirations()
+        last_trade_dates_df = self.option_asset.get_expirations
         # TO DO Expiration is day after last trade date
         # Might have to revisit for PM settled options
         option_expiry = last_trade_dates_df.index[0:num_expiries] + pd.tseries.offsets.BDay(1)
