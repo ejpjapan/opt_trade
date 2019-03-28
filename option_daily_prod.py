@@ -292,17 +292,18 @@ class OptionMarket:
 
         :param ib: Interactive brokers connection
         :param mkt_prices: List of underlying index and vol index prices
-        :param num_expiries (int): number of expirations
+        :param num_expiries (int or list): number of expirations
         :param z_score (numpy array): Range of Z scores for theoretical option strikes
         :param right (str) : Type of option P or C
         :return: Option tickers
         """
         # option_expiry_1 = third_fridays(self.trade_date, num_expiries)
-
-        last_trade_dates_df = self.option_asset.get_expirations
+        if isinstance(num_expiries, int):
+            num_expiries = range(num_expiries)
+        last_trade_dates_df = self.option_asset.get_expirations.iloc[num_expiries]
         # TO DO Expiration is day after last trade date
         # Might have to revisit for PM settled options
-        option_expiry = last_trade_dates_df.index[0:num_expiries] + pd.tseries.offsets.BDay(1)
+        option_expiry = last_trade_dates_df.index + pd.tseries.offsets.BDay(1)
         option_expiry = option_expiry.date
         risk_free = self.zero_curve.get_zero4_date(option_expiry) / 100
 
@@ -312,7 +313,8 @@ class OptionMarket:
                                                      last_price, risk_free.squeeze().values,
                                                      z_score, self.dividend_yield, sigma)
 
-        expiration_date_list = last_trade_dates_df['expirations'].iloc[0:num_expiries].tolist()
+        # expiration_date_list = last_trade_dates_df['expirations'].iloc[:num_expiries].tolist()
+        expiration_date_list = last_trade_dates_df['expirations'].tolist()
         theoretical_strike_list = theoretical_strikes.flatten().tolist()
         expiration_date_list = [item for item in expiration_date_list for _ in range(len(z_score))]
         contracts = [self._get_closest_valid_contract(strike, expiration, ib, right) for strike, expiration in
