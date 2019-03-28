@@ -8,24 +8,26 @@ Created on Tue Nov 13 08:33:48 2018
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
-from ib_insync import IB, Index, Option
-from option_utilities import third_fridays, USSimpleYieldCurve, get_theoretical_strike
-from spx_data_update import DividendYieldHistory
+from ib_insync import Index, Option
+from option_utilities import time_it, USSimpleYieldCurve, get_theoretical_strike
+from spx_data_update import DividendYieldHistory, IbWrapper
 from ib_insync.util import isNan
 
 
 class OptionAsset(ABC):
-    def __init__(self, mkt_symbol, vol_symbol, exchange_dict, port=4001, client_id=20):
+    def __init__(self, mkt_symbol, vol_symbol, exchange_dict):
         """Abstract class for option asset container"""
         exchange_mkt = exchange_dict['exchange_mkt']
         exchange_vol = exchange_dict['exchange_vol']
         exchange_opt = exchange_dict['exchange_opt']
+        self.trading_class = exchange_dict['trading_class']
         underlying_index = Index(mkt_symbol, exchange_mkt)
-        ib = IB()
-        ib.connect('127.0.0.1', port, client_id)
+        ibw = IbWrapper()
+        ib = ibw.ib
         self.underlying_qc = self.__get_underlying_qc(underlying_index, ib)
         self.sigma_qc = self.get_sigma_qc(vol_symbol, ib, exchange_vol)
-        self.chain = self.__get_option_chain(underlying_index, ib, exchange_opt)
+        self.chain = self.get_option_chain(underlying_index, ib, exchange_opt)
+
         ib.disconnect()
     """"" Abstract option asset container - Each underlying instrument is an instance of the OptionAsset class 
     and each instance is the only argument for the option_market Class. """
@@ -37,17 +39,7 @@ class OptionAsset(ABC):
         assert(len(index_qc) == 1)
         return index_qc[0]
 
-    @staticmethod
-    def __get_option_chain(underlying_index, ib, exchange):
-        """Retrieve IB qualifying options contracts for an index"""
-        all_chains = ib.reqSecDefOptParams(underlying_index.symbol, '',
-                                           underlying_index.secType,
-                                           underlying_index.conId)
-        # TO DO Consider moving this to abstract function as different markets will have different
-        # conditions around which options to select
-        chain = next(c for c in all_chains if c.tradingClass == underlying_index.symbol and c.exchange == exchange)
-        return chain
-
+    @property
     def get_expirations(self):
         """Retrieve Dataframe of option expirations (last trading day) for option chain in object"""
         expirations = pd.DataFrame(list(self.chain.expirations),
@@ -58,6 +50,12 @@ class OptionAsset(ABC):
         # remove negative when latest expiry is today
         expirations = expirations[expirations['year_fraction'] > 0]
         return expirations.sort_index()
+
+    @abstractmethod
+    def get_option_chain(self, underlying_index, ib, exchange):
+        """Abstract method"""
+        #
+    pass
 
     @abstractmethod
     def get_sigma_qc(self, vol_symbol, ib, exchange):
@@ -74,11 +72,12 @@ class OptionAsset(ABC):
 
 
 class SpxOptionAsset(OptionAsset):
-    def __init__(self):
+    def __init__(self, trading_class='SPX'):
         """"" Asset container for SPX  - S&P 500 Index. """
         mkt_symbol = 'SPX'
         vol_symbol = 'VIX'
-        exchange_dict = {'exchange_mkt': 'CBOE', 'exchange_vol': 'CBOE', 'exchange_opt': 'CBOE'}
+        exchange_dict = {'exchange_mkt': 'CBOE', 'exchange_vol': 'CBOE', 'exchange_opt': 'CBOE',
+                         'trading_class': trading_class}  # other choice is SPXW
         super().__init__(mkt_symbol, vol_symbol, exchange_dict)
 
     def get_sigma_qc(self, vol_symbol, ib, exchange):
@@ -87,6 +86,16 @@ class SpxOptionAsset(OptionAsset):
         sigma_qc = ib.qualifyContracts(sigma_index)
         assert(len(sigma_qc) == 1)
         return sigma_qc[0]
+
+    def get_option_chain(self, underlying_index, ib, exchange):
+        """Retrieve IB qualifying options contracts for an index"""
+        all_chains = ib.reqSecDefOptParams(underlying_index.symbol, '',
+                                           underlying_index.secType,
+                                           underlying_index.conId)
+        # TO DO Consider moving this to abstract function as different markets will have different
+        # conditions around which options to select
+        chain = next(c for c in all_chains if c.tradingClass == self.trading_class and c.exchange == exchange)
+        return chain
 
     @staticmethod
     def get_dividend_yield():
@@ -111,6 +120,17 @@ class RSL2OptionAsset(OptionAsset):
         sigma_qc = ib.qualifyContracts(sigma_index)
         assert(len(sigma_qc) == 1)
         return sigma_qc[0]
+
+    @staticmethod
+    def get_option_chain(underlying_index, ib, exchange):
+        """Retrieve IB qualifying options contracts for an index"""
+        all_chains = ib.reqSecDefOptParams(underlying_index.symbol, '',
+                                           underlying_index.secType,
+                                           underlying_index.conId)
+        # TO DO Consider moving this to abstract function as different markets will have different
+        # conditions around which options to select
+        chain = next(c for c in all_chains if c.tradingClass == underlying_index.symbol and c.exchange == exchange)
+        return chain
 
     @staticmethod
     def get_dividend_yield():
@@ -189,15 +209,12 @@ class TradeChoice:
         return df_out
 
     def option_lots(self, leverage, capital_at_risk):
-        # capital_at_risk = float(self.account_value[0].value)
-        num_expiries = len(self.expirations)
         risk_free = self.yield_curve.get_zero4_date(self.expirations) / 100
         option_life = np.array([timeDelta.days / 365 for timeDelta in
-                                [expiryDate.date() - self.trade_date for expiryDate in self.expirations]])
-
-        strike_discount = np.tile(np.transpose(np.exp(np.multiply(np.transpose(- risk_free.values), option_life))),
-                                  num_expiries)
-        notional_capital = np.multiply(strike_discount, self.strike_grid().copy()) - self.premium_grid()
+                                [expiryDate - self.trade_date for expiryDate in self.expirations]])
+        strike_discount = np.exp(- risk_free.mul(option_life))
+        strike_discount = strike_discount[strike_discount.columns[0]] # convert to series
+        notional_capital = self.strike_grid().mul(strike_discount, axis=0) - self.premium_grid()
         contract_lots = [round(capital_at_risk / (notional_capital.copy() / num_leverage * 100), 0)
                          for num_leverage in leverage]
         for counter, df in enumerate(contract_lots):
@@ -213,11 +230,12 @@ class TradeChoice:
         # 100% of premium + 10% * strike
         single_margin_b = self.premium_grid() + 0.1 * self.strike_grid()
         margin = pd.concat([single_margin_a, single_margin_b]).max(level=0)
-        return margin * int(self.tickers[0].contract.multiplier)
+        margin = margin * int(self.tickers[0].contract.multiplier)
+        return margin
 
     @staticmethod
     def _format_index(df_in):
-        df_out = df_in.set_index(df_in.index.strftime('%Y.%m.%e'))
+        df_out = df_in.set_index(df_in.index.strftime('%Y.%m.%d'))
         return df_out
 
 
@@ -230,10 +248,11 @@ class OptionMarket:
 
     def __init__(self, opt_asset: OptionAsset):
         self.option_asset = opt_asset
-        self.trade_date = pd.datetime.today().date()
+        self.trade_date = pd.DatetimeIndex([pd.datetime.today()])
         self.zero_curve = USSimpleYieldCurve()
         self.dividend_yield = self.option_asset.get_dividend_yield()
 
+    # @time_it
     def form_trade_choice(self, z_score, num_expiries, right='P'):
         """Forms option trade choice
 
@@ -251,8 +270,8 @@ class OptionMarket:
             Raises:
                 ."""
 
-        ib = IB()
-        ib.connect('127.0.0.1', port=4001, clientId=30)
+        ibw = IbWrapper()
+        ib = ibw.ib
         liquidation_value = self._get_account_tag(ib, 'NetLiquidationByCurrency')
         # TO DO: this will not work when underlying does not have implied vol index
         # this will happen when we need to calculate an implied vol index
@@ -267,6 +286,7 @@ class OptionMarket:
         ib.disconnect()
         return trd_choice
 
+    # @time_it
     def _option_tickers(self, ib, mkt_prices, num_expiries, z_score, right):
         """ Retrieves valid option tickers based on theoretical strikes
 
@@ -279,7 +299,7 @@ class OptionMarket:
         """
         # option_expiry_1 = third_fridays(self.trade_date, num_expiries)
 
-        last_trade_dates_df = self.option_asset.get_expirations()
+        last_trade_dates_df = self.option_asset.get_expirations
         # TO DO Expiration is day after last trade date
         # Might have to revisit for PM settled options
         option_expiry = last_trade_dates_df.index[0:num_expiries] + pd.tseries.offsets.BDay(1)
@@ -288,16 +308,17 @@ class OptionMarket:
 
         last_price = mkt_prices[0]
         sigma = mkt_prices[1] / 100
-        theoretical_strikes = get_theoretical_strike(self.trade_date, option_expiry,
-                                                     last_price, risk_free.values,
+        theoretical_strikes = get_theoretical_strike(self.trade_date.date, option_expiry,
+                                                     last_price, risk_free.squeeze().values,
                                                      z_score, self.dividend_yield, sigma)
 
         expiration_date_list = last_trade_dates_df['expirations'].iloc[0:num_expiries].tolist()
         theoretical_strike_list = theoretical_strikes.flatten().tolist()
-        expiration_date_list = [item for item in expiration_date_list for i in range(num_expiries)]
+        expiration_date_list = [item for item in expiration_date_list for _ in range(len(z_score))]
         contracts = [self._get_closest_valid_contract(strike, expiration, ib, right) for strike, expiration in
                      zip(theoretical_strike_list, expiration_date_list)]
         contracts_flat = [item for sublist in contracts for item in sublist]
+
         tickers = ib.reqTickers(*contracts_flat)
 
         # Alternative to get live tickers
@@ -323,8 +344,20 @@ class OptionMarket:
         return account_tag
 
     @staticmethod
+    # @time_it
     def _get_market_prices(ib, contracts):
-        tickers = ib.reqTickers(*contracts)
+
+        # tickers = ib.reqTickers(*contracts)
+
+        # Alternative to get live tickers
+        for contract in contracts:
+            ib.reqMktData(contract, '', False, False)
+
+        # print('Waiting for tickers')
+        ib.sleep(1)
+        tickers = [ib.ticker(contract) for contract in contracts]
+        # print(tickers)
+
         mkt_prices = [ticker.last if ticker.marketPrice() == ticker.close else ticker.marketPrice()
                       for ticker in tickers]
         if any([True for item in mkt_prices if isNan(item)]):
@@ -339,7 +372,8 @@ class OptionMarket:
         strikes_sorted = sorted(list(self.option_asset.chain.strikes),
                                 key=lambda x: abs(x - theoretical_strike))
         ii = 0
-        contract = Option(symbol, expiration, strikes_sorted[ii], right, exchange)
+        contract = Option(symbol, expiration, strikes_sorted[ii], right, exchange,
+                          tradingClass=self.option_asset.trading_class)
         qualified_contract = ib.qualifyContracts(contract)
         while len(qualified_contract) == 0 or ii > 1000:
             ii = ii + 1
