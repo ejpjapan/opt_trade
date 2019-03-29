@@ -79,6 +79,10 @@ class SpxOptionAsset(OptionAsset):
         exchange_dict = {'exchange_mkt': 'CBOE', 'exchange_vol': 'CBOE', 'exchange_opt': 'CBOE',
                          'trading_class': trading_class}  # other choice is SPXW
         super().__init__(mkt_symbol, vol_symbol, exchange_dict)
+        if trading_class == 'SPXW':
+            self.settlement_PM = True
+        else:
+            self.settlement_PM = False
 
     def get_sigma_qc(self, vol_symbol, ib, exchange):
         """Returns implied Volatility for market"""
@@ -165,18 +169,19 @@ class RSL2OptionAsset(OptionAsset):
 
 class TradeChoice:
 
-    def __init__(self, tickers, mkt_prices, account_value, z_score, yield_curve, trade_date):
+    def __init__(self, tickers, mkt_prices, account_value, z_score, yield_curve, trade_date, option_expiry):
         self.tickers = tickers
         self.spot = mkt_prices[0]
         self.sigma = mkt_prices[1]
         self.account_value = account_value
         self.z_score = z_score
-        last_trade_dates = [item.contract.lastTradeDateOrContractMonth for item in self.tickers]
-        unique_last_trade_dates = pd.to_datetime(list(dict.fromkeys(last_trade_dates)))
-        self.expirations = unique_last_trade_dates + pd.tseries.offsets.BDay(1)
+        # last_trade_dates = [item.contract.lastTradeDateOrContractMonth for item in self.tickers]
+        # unique_last_trade_dates = pd.to_datetime(list(dict.fromkeys(last_trade_dates)))
+        self.expirations = option_expiry
         self.yield_curve = yield_curve
         self.trade_date = trade_date
 
+    @property
     def strike_grid(self):
         strikes = [item.contract.strike for item in self.tickers]
         strike_array = np.array(strikes).astype(int).reshape(len(self.expirations),
@@ -185,8 +190,8 @@ class TradeChoice:
         df_out = self._format_index(df_out)
         return df_out
 
+    @property
     def premium_grid(self):
-        # Debug
         premium_mid = [item.marketPrice() for item in self.tickers]
         premium_mid = np.round(premium_mid, 2)
         premium_mid = premium_mid.reshape(len(self.expirations),
@@ -195,6 +200,7 @@ class TradeChoice:
         df_out = self._format_index(df_out)
         return df_out
 
+    @property
     def prices_grid(self):
         bid, ask = zip(*[(item.bid, item.ask) for item in self.tickers])
         list_val = [np.array(item).reshape((len(self.expirations),
@@ -251,6 +257,7 @@ class OptionMarket:
         self.trade_date = pd.DatetimeIndex([pd.datetime.today()])
         self.zero_curve = USSimpleYieldCurve()
         self.dividend_yield = self.option_asset.get_dividend_yield()
+        self.option_expiry = None
 
     # @time_it
     def form_trade_choice(self, z_score, num_expiries, right='P'):
@@ -281,7 +288,7 @@ class OptionMarket:
         option_tickers = self._option_tickers(ib, mkt_prices, num_expiries, z_score, right)
 
         trd_choice = TradeChoice(option_tickers, mkt_prices, liquidation_value, z_score, self.zero_curve,
-                                 self.trade_date)
+                                 self.trade_date, self.option_expiry)
 
         ib.disconnect()
         return trd_choice
@@ -303,8 +310,12 @@ class OptionMarket:
         last_trade_dates_df = self.option_asset.get_expirations.iloc[num_expiries]
         # TO DO Expiration is day after last trade date
         # Might have to revisit for PM settled options
-        option_expiry = last_trade_dates_df.index + pd.tseries.offsets.BDay(1)
-        option_expiry = option_expiry.date
+        if self.option_asset.settlement_PM:
+            self.option_expiry = last_trade_dates_df.index
+        else:
+            self.option_expiry = last_trade_dates_df.index + pd.tseries.offsets.BDay(1)
+
+        option_expiry = self.option_expiry.date
         risk_free = self.zero_curve.get_zero4_date(option_expiry) / 100
 
         last_price = mkt_prices[0]
