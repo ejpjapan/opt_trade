@@ -211,7 +211,7 @@ class TradeChoice:
         return df_out
 
     def pct_otm_grid(self, last_price):
-        df_out = self.strike_grid() / last_price - 1
+        df_out = self.strike_grid / last_price - 1
         return df_out
 
     def option_lots(self, leverage, capital_at_risk):
@@ -220,7 +220,7 @@ class TradeChoice:
                                 [expiryDate - self.trade_date for expiryDate in self.expirations]])
         strike_discount = np.exp(- risk_free.mul(option_life))
         strike_discount = strike_discount[strike_discount.columns[0]] # convert to series
-        notional_capital = self.strike_grid().mul(strike_discount, axis=0) - self.premium_grid()
+        notional_capital = self.strike_grid.mul(strike_discount, axis=0) - self.premium_grid
         contract_lots = [round(capital_at_risk / (notional_capital.copy() / num_leverage * 100), 0)
                          for num_leverage in leverage]
         for counter, df in enumerate(contract_lots):
@@ -230,11 +230,11 @@ class TradeChoice:
 
     def margin(self, last_price):
         # 100% of premium + 20% spot price - (spot-strike)
-        otm_margin = last_price - self.strike_grid()
+        otm_margin = last_price - self.strike_grid
         otm_margin[otm_margin < 0] = 0
-        single_margin_a = (self.premium_grid() + 0.2 * last_price) - (last_price - self.strike_grid())
+        single_margin_a = (self.premium_grid + 0.2 * last_price) - (last_price - self.strike_grid)
         # 100% of premium + 10% * strike
-        single_margin_b = self.premium_grid() + 0.1 * self.strike_grid()
+        single_margin_b = self.premium_grid + 0.1 * self.strike_grid
         margin = pd.concat([single_margin_a, single_margin_b]).max(level=0)
         margin = margin * int(self.tickers[0].contract.multiplier)
         return margin
