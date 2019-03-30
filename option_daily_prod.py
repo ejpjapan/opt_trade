@@ -219,7 +219,7 @@ class TradeChoice:
         option_life = np.array([timeDelta.days / 365 for timeDelta in
                                 [expiryDate - self.trade_date for expiryDate in self.expirations]])
         strike_discount = np.exp(- risk_free.mul(option_life))
-        strike_discount = strike_discount[strike_discount.columns[0]] # convert to series
+        strike_discount = strike_discount.squeeze()  # convert to series
         notional_capital = self.strike_grid.mul(strike_discount, axis=0) - self.premium_grid
         contract_lots = [round(capital_at_risk / (notional_capital.copy() / num_leverage * 100), 0)
                          for num_leverage in leverage]
@@ -241,7 +241,7 @@ class TradeChoice:
 
     @staticmethod
     def _format_index(df_in):
-        df_out = df_in.set_index(df_in.index.strftime('%Y.%m.%d'))
+        df_out = df_in.set_index(df_in.index.tz_localize(None).normalize())
         return df_out
 
 

@@ -49,7 +49,11 @@ class UpdateSP500Data:
 
 class GetRawCBOEOptionData:
     OPTION_TYPES = ['P', 'C']
-    SUBSCRIPTION_STR = '/subscriptions/order_000004576/item_000006417/'
+    # Need to update this string each year for subscription renewal
+    if pd.datetime.today().date() == pd.to_datetime('20-Mar-2020').date():
+        print('Warning - Update subscription string for SPX from CBOE Datashop')
+    SUBSCRIPTION_STR = '/subscriptions/order_000008352/item_000011077/'
+
     SYMBOL_DEFINITION_FILE = 'OptionSymbolConversionHistory.xlsx'
 
     def __init__(self, top_level_directory):
