@@ -215,7 +215,7 @@ class TradeChoice:
         return df_out
 
     def option_lots(self, leverage, capital_at_risk):
-        risk_free = self.yield_curve.get_zero4_date(self.expirations) / 100
+        risk_free = self.yield_curve.get_zero4_date(self.expirations.date) / 100
         option_life = np.array([timeDelta.days / 365 for timeDelta in
                                 [expiryDate - self.trade_date for expiryDate in self.expirations]])
         strike_discount = np.exp(- risk_free.mul(option_life))
@@ -254,7 +254,7 @@ class OptionMarket:
 
     def __init__(self, opt_asset: OptionAsset):
         self.option_asset = opt_asset
-        self.trade_date = pd.DatetimeIndex([pd.datetime.today()])
+        self.trade_date = pd.DatetimeIndex([pd.datetime.today()], tz='US/Eastern')
         self.zero_curve = USSimpleYieldCurve()
         self.dividend_yield = self.option_asset.get_dividend_yield()
         self.option_expiry = None
@@ -311,21 +311,27 @@ class OptionMarket:
         # TO DO Expiration is day after last trade date
         # Might have to revisit for PM settled options
         if self.option_asset.settlement_PM:
-            self.option_expiry = last_trade_dates_df.index
+            self.option_expiry = last_trade_dates_df.index.normalize() + pd.DateOffset(hours=16)
         else:
             self.option_expiry = last_trade_dates_df.index + pd.tseries.offsets.BDay(1)
+            self.option_expiry = self.option_expiry.normalize() + pd.DateOffset(hours=9) + pd.DateOffset(minutes=45)
 
-        option_expiry = self.option_expiry.date
-        risk_free = self.zero_curve.get_zero4_date(option_expiry) / 100
+        # option_expiry = self.option_expiry.date
+        # option_expiry = self.option_expiry
+        self.option_expiry = self.option_expiry.tz_localize(tz='US/Eastern')
+
+        risk_free = self.zero_curve.get_zero4_date(self.option_expiry.date) / 100
 
         last_price = mkt_prices[0]
         sigma = mkt_prices[1] / 100
-        theoretical_strikes = get_theoretical_strike(self.trade_date.date, option_expiry,
+        theoretical_strikes = get_theoretical_strike(self.trade_date, self.option_expiry,
                                                      last_price, risk_free.squeeze().values,
                                                      z_score, self.dividend_yield, sigma)
 
         # expiration_date_list = last_trade_dates_df['expirations'].iloc[:num_expiries].tolist()
         expiration_date_list = last_trade_dates_df['expirations'].tolist()
+        # expiration_date_list = last_trade_dates_df.index.tolist()
+
         theoretical_strike_list = theoretical_strikes.flatten().tolist()
         expiration_date_list = [item for item in expiration_date_list for _ in range(len(z_score))]
         contracts = [self._get_closest_valid_contract(strike, expiration, ib, right) for strike, expiration in
