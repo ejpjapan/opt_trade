@@ -190,7 +190,8 @@ class OptionSimulation:
                 df_out.loc[dts, self.GREEK_COL_NAMES] = option_trade_data[option_trade_data['strike'] ==
                                                                           strike_traded][self.GREEK_COL_NAMES].iloc[0]
             dtf_trades.append(df_out)
-            sim_output = SimulationParameters(dtf_trades, zscore, sim_dates_live, option_type, str(trade_day_type))
+
+        sim_output = SimulationParameters(dtf_trades, zscore, sim_dates_live, option_type, str(trade_day_type))
         return sim_output
 
     @staticmethod
@@ -435,6 +436,7 @@ class OptionWeeklySimulation:
         sim_dates_all = pd.DatetimeIndex(self.raw_df['quote_date'].unique())
         sim_dates_all = sim_dates_all[sim_dates_all <= last_zero_date]
         self.sim_dates_all = sim_dates_all.sort_values()
+        self.zscore = None
         # self.option_data = self.raw_df()
 
     def trade_sim(self, zscore, option_duration, option_type='P', trade_day_type='EOM'):
@@ -444,12 +446,12 @@ class OptionWeeklySimulation:
         '''Run option simulation'''
         print('Running Simulation - Weekly Options - trade_day_type:' + str(trade_day_type) + ' | Z-score ' +
               str(zscore) + ' | Duration ' + str(option_duration.days) + ' Days | Option Type:{}'.format(option_type))
+        self.zscore = zscore
+        # trade_dates = OptionSimulation.get_trade_dates(self.sim_dates_all, trade_type=trade_day_type)
+        # trade_model_inputs = self.sim_param.loc[trade_dates]
+        # self.expiration_actual = self._get_expiration_dates(option_duration, trade_dates, raw_df)
 
-        trade_dates = OptionSimulation.get_trade_dates(self.sim_dates_all, trade_type=trade_day_type)
-        trade_model_inputs = self.sim_param.loc[trade_dates]
-        self.expiration_actual = self._get_expiration_dates(option_duration, trade_dates, raw_df)
-
-        return raw_df, trade_dates, trade_model_inputs, self.expiration_actual
+        return raw_df
 
     @staticmethod
     def _get_expiration_dates(option_duration_weeks, trade_dates, raw_df):
@@ -526,7 +528,7 @@ def csv_2_feather(csv_directory):
     raw_df = raw_df[['quote_date', 'root', 'expiration', 'strike',
                      'option_type', 'open', 'high', 'low', 'close', 'active_underlying_price_1545',
                      'implied_volatility_1545', 'delta_1545', 'gamma_1545', 'theta_1545',
-                     'vega_1545', 'rho_1545']]
+                     'vega_1545', 'rho_1545', 'bid_1545', 'ask_1545']]
     raw_df = raw_df[raw_df['root'] == 'SPXW']
     raw_df.loc[:, ['quote_date', 'expiration']] = raw_df.loc[:, ['quote_date', 'expiration']].apply(
         pd.to_datetime)
