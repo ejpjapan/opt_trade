@@ -50,9 +50,11 @@ class UpdateSP500Data:
 class GetRawCBOEOptionData:
     OPTION_TYPES = ['P', 'C']
     # Need to update this string each year for subscription renewal
-    if pd.datetime.today().date() == pd.to_datetime('20-Mar-2020').date():
+    if pd.datetime.today().date() > pd.to_datetime('20-Mar-2020').date():
         print('Warning - Update subscription string for SPX from CBOE Datashop')
+        exit(0)
     SUBSCRIPTION_STR = '/subscriptions/order_000008352/item_000011077/'
+    # SUBSCRIPTION_STR = 'order_000008421/item_000011148/'
 
     SYMBOL_DEFINITION_FILE = 'OptionSymbolConversionHistory.xlsx'
 
@@ -147,12 +149,8 @@ class GetRawCBOEOptionData:
                 # Convert option type to upper cap
                 option_df['option_type'] = option_df['option_type'].apply(str.upper)
                 # Remove SPXW because its the only root that contains SPX
-                # Think about improving this with regex
                 option_df = option_df[~option_df['root'].str.contains('SPXW')]
                 # Create new column of days2Expiry
-        #       option_df['days2Expiry'] = option_df['expiration'] - option_df['quote_date']
-        #       timedelata int64 not stored in feather
-        #       option_df = option_df[option_df['root'] == rootSymbols]
                 option_df = option_df[option_df['root'].str.contains(regex_pattern)]
                 for option_type in self.OPTION_TYPES:
                     df2save = option_df[option_df['option_type'] == option_type]
@@ -160,8 +158,6 @@ class GetRawCBOEOptionData:
                     feather.write_dataframe(df2save, str(out_directory / file_name))
         if archive_files:
             # This makes sure we keep the archive - we will be missing zip and csv
-            # files from March 24th 2018 to March October 10 2018 - will need to re-purchase
-            # if we want to run analysis on weekly options
             for item in os.listdir(in_directory):
                 if item.endswith('.csv'):
                     os.rename(in_directory / item, str(csv_archive_directory / item))
