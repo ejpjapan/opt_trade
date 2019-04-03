@@ -430,7 +430,8 @@ class OptionWeeklySimulation:
         file_names = {'spot': 'sp500_close', 'sigma': 'vix_index', 'dividend_yield': 'sp500_dividend_yld'}
         self.sim_param = OptionSimulation.get_simulation_parameters(UpdateSP500Data.TOP_LEVEL_PATH, file_names)
         self.expiration_actual = None
-        self.raw_df = feather.read_dataframe(UpdateSP500Data.TOP_LEVEL_PATH / 'raw_df.feather')
+        # self.raw_df = feather.read_dataframe(UpdateSP500Data.TOP_LEVEL_PATH / 'raw_df.feather')
+        self.raw_df = csv_2_feather(UpdateSP500Data.TOP_LEVEL_PATH / 'csv')
         # Simulation dates depend depend on availability of zero rates
         last_zero_date = self.usZeroYldCurve.zero_yields.index[-1]
         sim_dates_all = pd.DatetimeIndex(self.raw_df['quote_date'].unique())
@@ -453,16 +454,16 @@ class OptionWeeklySimulation:
 
         return raw_df
 
-    @staticmethod
-    def _get_expiration_dates(option_duration_weeks, trade_dates, raw_df):
-        expiration_theoretical = OptionWeeklySimulation.theoretical_expiration_dates(option_duration_weeks, trade_dates)
-
-        # expiration_theoretical = pd.DatetimeIndex(expiration_theoretical)
-        # expiration_actual, available_expiries = get_actual_option_expiries(expiration_theoretical,
-        #                                                                    trade_dates,
-        #                                                                    str(self.feather_directory) +
-        #                                                                    '/UnderlyingOptionsEODCalcs_')
-        return expiration_theoretical
+    # @staticmethod
+    # def _get_expiration_dates(option_duration_weeks, trade_dates, raw_df):
+    #     expiration_theoretical = OptionWeeklySimulation.theoretical_expiration_dates(option_duration_weeks, trade_dates)
+    #
+    #     # expiration_theoretical = pd.DatetimeIndex(expiration_theoretical)
+    #     # expiration_actual, available_expiries = get_actual_option_expiries(expiration_theoretical,
+    #     #                                                                    trade_dates,
+    #     #                                                                    str(self.feather_directory) +
+    #     #                                                                    '/UnderlyingOptionsEODCalcs_')
+    #     return expiration_theoretical
 
     # def actual_expiration_dates(self):
     #     self.raw_df.groupby('quote_date')
@@ -482,61 +483,72 @@ class OptionWeeklySimulation:
 
 
 
-    @staticmethod
-    def theoretical_expiration_dates(option_duration, trade_dates):
-        """Return DatetimeIndex of theoretical expiration dates"""
-        expiration_theoretical = trade_dates + option_duration
-        # Check that theoretical every expiration except last is after following trade_date
-        bool_idx = expiration_theoretical[:-1] >= trade_dates[1:]
-        if any(~bool_idx):
-            print('Some expiration dates are before following trade date - shifting expirations')
-            expiration_theoretical_series = expiration_theoretical[:-1].to_series()
-            trade_dates_series = trade_dates[1:].to_series()
-            expiration_theoretical_series[~bool_idx] = np.NaN  # Replace old values with nan
-            expiration_theoretical_series = pd.concat([expiration_theoretical_series.dropna(),
-                                                       trade_dates_series[~bool_idx]], axis=0)
-            expiration_theoretical_series = expiration_theoretical_series.sort_values()
-            expiration_theoretical_list = expiration_theoretical_series.index.tolist()
-            expiration_theoretical_list.append(expiration_theoretical[-1])  # Add back last expiration date
-            expiration_theoretical_dti = pd.DatetimeIndex(np.asarray(expiration_theoretical_list))
-        else:
-            expiration_theoretical_dti = expiration_theoretical
-        return expiration_theoretical_dti
-
-    # @property
-    # def raw_df(self):
-    #     if self._raw_df is None:
-    #         raw_df = feather.read_dataframe(UpdateSP500Data.TOP_LEVEL_PATH / 'raw_df.feather')
-    #         self._raw_df = raw_df
+    # @staticmethod
+    # def theoretical_expiration_dates(option_duration, trade_dates):
+    #     """Return DatetimeIndex of theoretical expiration dates"""
+    #     expiration_theoretical = trade_dates + option_duration
+    #     # Check that theoretical every expiration except last is after following trade_date
+    #     bool_idx = expiration_theoretical[:-1] >= trade_dates[1:]
+    #     if any(~bool_idx):
+    #         print('Some expiration dates are before following trade date - shifting expirations')
+    #         expiration_theoretical_series = expiration_theoretical[:-1].to_series()
+    #         trade_dates_series = trade_dates[1:].to_series()
+    #         expiration_theoretical_series[~bool_idx] = np.NaN  # Replace old values with nan
+    #         expiration_theoretical_series = pd.concat([expiration_theoretical_series.dropna(),
+    #                                                    trade_dates_series[~bool_idx]], axis=0)
+    #         expiration_theoretical_series = expiration_theoretical_series.sort_values()
+    #         expiration_theoretical_list = expiration_theoretical_series.index.tolist()
+    #         expiration_theoretical_list.append(expiration_theoretical[-1])  # Add back last expiration date
+    #         expiration_theoretical_dti = pd.DatetimeIndex(np.asarray(expiration_theoretical_list))
     #     else:
-    #         raw_df = self._raw_df
-    #     return raw_df
+    #         expiration_theoretical_dti = expiration_theoretical
+    #     return expiration_theoretical_dti
 
 
 def csv_2_feather(csv_directory):
-    dataframe_list = []
-    greek_cols = ['delta_1545',
-                  'rho_1545',
-                  'vega_1545',
-                  'gamma_1545',
-                  'theta_1545']
-    for item in os.listdir(csv_directory):
-        if item.endswith('.csv'):
-            future_df = pd.read_csv(csv_directory / item)
-            dataframe_list.append(future_df)
-    raw_df = pd.concat(dataframe_list, axis=0, ignore_index=True)
-    raw_df = raw_df[['quote_date', 'root', 'expiration', 'strike',
-                     'option_type', 'open', 'high', 'low', 'close', 'active_underlying_price_1545',
-                     'implied_volatility_1545', 'delta_1545', 'gamma_1545', 'theta_1545',
-                     'vega_1545', 'rho_1545', 'bid_1545', 'ask_1545']]
-    raw_df = raw_df[raw_df['root'] == 'SPXW']
-    raw_df.loc[:, ['quote_date', 'expiration']] = raw_df.loc[:, ['quote_date', 'expiration']].apply(
-        pd.to_datetime)
-    raw_df.loc[:, greek_cols] = raw_df.loc[:, greek_cols].apply(pd.to_numeric, errors='coerce')
-    # Remove quote dates with less than 4 expirations
-    # raw_df = raw_df.groupby('quote_date').filter(lambda x: len(x['expiration'].unique()) >= 4)
-    raw_df = raw_df.sort_values('quote_date').reset_index(drop=True)
-    feather.write_dataframe(raw_df, UpdateSP500Data.TOP_LEVEL_PATH / 'raw_df.feather')
+
+    spxw_feather = UpdateSP500Data.TOP_LEVEL_PATH / 'raw_df.feather'
+    history = feather.read_dataframe(spxw_feather)
+    last_date = pd.DatetimeIndex(history['quote_date'].unique()).sort_values()[-1]
+
+    csv_dates = get_dates(csv_directory, file_type='.csv')
+    csv_dates = csv_dates.to_series()
+
+    csv_dates = csv_dates[csv_dates > last_date]
+    csv_dates = csv_dates.index
+    try:
+        file_list = []
+        for item in csv_dates:
+            file_list.append('UnderlyingOptionsEODCalcs_' + item.strftime('%Y-%m-%d') + '.csv')
+        dataframe_list = []
+        greek_cols = ['delta_1545',
+                      'rho_1545',
+                      'vega_1545',
+                      'gamma_1545',
+                      'theta_1545']
+        # for item in os.listdir(csv_directory):
+        for item in file_list:
+            if item.endswith('.csv'):
+                future_df = pd.read_csv(csv_directory / item)
+                if pd.DatetimeIndex(future_df['quote_date'].unique()) > last_date:
+                    dataframe_list.append(future_df)
+
+        raw_df = pd.concat(dataframe_list, axis=0, ignore_index=True)
+        raw_df = raw_df[['quote_date', 'root', 'expiration', 'strike',
+                         'option_type', 'open', 'high', 'low', 'close', 'active_underlying_price_1545',
+                         'implied_volatility_1545', 'delta_1545', 'gamma_1545', 'theta_1545',
+                         'vega_1545', 'rho_1545', 'bid_1545', 'ask_1545']]
+        raw_df = raw_df[raw_df['root'] == 'SPXW']
+        raw_df.loc[:, ['quote_date', 'expiration']] = raw_df.loc[:, ['quote_date', 'expiration']].apply(
+            pd.to_datetime)
+        raw_df.loc[:, greek_cols] = raw_df.loc[:, greek_cols].apply(pd.to_numeric, errors='coerce')
+        raw_df = pd.concat([history, raw_df], axis=0)
+        raw_df = raw_df.sort_values('quote_date').reset_index(drop=True)
+        feather.write_dataframe(raw_df, spxw_feather)
+        print('Feather updated')
+    except ValueError:
+        print('Feather file not updated')
+        raw_df = history
     # ['underlying_symbol', 'quote_date', 'root', 'expiration', 'strike',
     #  'option_type', 'open', 'high', 'low', 'close', 'trade_volume',
     #  'bid_size_1545', 'bid_1545', 'ask_size_1545', 'ask_1545',

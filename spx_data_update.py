@@ -359,14 +359,14 @@ def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
     return daily_close
 
 
-def get_dates(feather_directory):
+def get_dates(feather_directory, file_type='.feather'):
     """ Fetch dates from feather file names
     :rtype: pd.DatetimeIndex
     """
     regex_pattern = r'\d{4}-\d{2}-\d{2}'  # this will fail if month>12 or days>31
     opt_dates_list = []
     for item in os.listdir(feather_directory):  # loop through items in dir
-        if item.endswith('.feather'):
+        if item.endswith(file_type):
             date_string = re.search(regex_pattern, item)
             if date_string:
                 opt_dates_list.append(date_string.group())
