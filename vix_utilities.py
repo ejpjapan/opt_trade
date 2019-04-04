@@ -159,7 +159,7 @@ def get_futures(contract_str, remove_weekly=False):
                                         pd.to_datetime(contract_df['lastTradeDateOrContractMonth']))]
     future_series = pd.concat(close_list, axis=1, sort=False)
     future_series = future_series.transpose().sort_index()
-    future_series.columns = pd.to_datetime(future_series.columns )
+    future_series.columns = pd.to_datetime(future_series.columns)
     return future_series, contract_df
 
 
