@@ -85,7 +85,7 @@ class SPX5MinuteBars:
     def expected_vol(self):
         """Expected volatility out to 50 days using HAR model"""
         if self.har_vol.empty:
-            daily_vol = self.realized_vol()
+            daily_vol = self.realized_vol
             series_list = []
             for i in range(self.window, len(daily_vol) + 1):
                 am = arch_model(daily_vol[i - self.window:i], mean='HAR', lags=[1, 5, 22], vol='Constant')
