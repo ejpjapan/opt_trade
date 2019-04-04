@@ -5,7 +5,6 @@ Created on Thu Mar 29 14:19:37 2018
 
 @author: macbook2
 """
-import os
 import feather
 import pandas as pd
 import numpy as np
@@ -94,8 +93,8 @@ class OptionSimulation:
         self.option_type = option_type
 
         '''Run option simulation'''
-        print('Running Simulation - trade_day_type:' + str(trade_day_type) + ' | Z-score ' + str(zscore) + ' | Duration '
-              + str(option_duration_months) + ' | Option Type:{}'.format(option_type))
+        print('Running Simulation - trade_day_type:' + str(trade_day_type) + ' | Z-score ' + str(zscore) +
+              ' | Duration ' + str(option_duration_months) + ' | Option Type:{}'.format(option_type))
 
         trade_dates = self.get_trade_dates(self.sim_dates_all, trade_day_type)
 
@@ -132,8 +131,17 @@ class OptionSimulation:
             last_sim_date_idx = sim_dates_live.get_loc(self.expiration_actual[-1])
             sim_dates_live = sim_dates_live[:last_sim_date_idx]
 
-        dtf_trades = []
+        dtf_trades = self.simulation_loop(option_type, sim_dates_live, trade_dates, trade_model_inputs,
+                                          self.usZeroYldCurve,
+                                          self.feather_directory)
 
+        sim_output = SimulationParameters(dtf_trades, zscore, sim_dates_live, option_type, str(trade_day_type))
+        return sim_output
+
+    @staticmethod
+    def simulation_loop(option_type, sim_dates_live, trade_dates, trade_model_inputs, zero_curve,
+                        feather_input=None):
+        dtf_trades = []
         for i, trade_dt in enumerate(trade_dates):
             # Get date slice between two trading dates
             start_idx = sim_dates_live.get_loc(trade_dates[i])
@@ -142,18 +150,20 @@ class OptionSimulation:
                 # last date slice is to end of simulation period
                 date_slice = sim_dates_live[start_idx:]
             else:
-                end_idx = sim_dates_live.get_loc(trade_dates[i+1]) + 1
+                end_idx = sim_dates_live.get_loc(trade_dates[i + 1]) + 1
                 date_slice = sim_dates_live[start_idx:end_idx]
             # Create empty data frame
-            df_out = pd.DataFrame(np.nan, index=date_slice, columns=self.COL_NAMES
-                                  + self.GREEK_COL_NAMES)
+            df_out = pd.DataFrame(np.nan, index=date_slice, columns=OptionSimulation.COL_NAMES
+                                  + OptionSimulation.GREEK_COL_NAMES)
             # loop through each day within a date_slice
             for dts in date_slice:
-                dtf = feather.read_dataframe(str(self.feather_directory) +
+                try:
+                    dtf = feather_input[feather_input['quote_date'] == dts]
+                except TypeError:
+                    dtf = feather.read_dataframe(str(feather_input) +
                                              '/UnderlyingOptionsEODCalcs_' +
                                              dts.strftime(format='%Y-%m-%d')
                                              + '_' + option_type + '.feather')
-
                 # First trade date find traded strike from available strikes based on
                 # theoretical strike
                 if dts == date_slice[0]:
@@ -168,18 +178,13 @@ class OptionSimulation:
                     option_trade_data = dtf[dtf['expiration'] == expiry_date]
 
                 days2exp = expiry_date - dts
-                zero_rate = self.usZeroYldCurve.get_zero_4dates(as_of_dates=dts,
-                                                                maturity_dates=expiry_date,
-                                                                date_adjust=True) / 100
+                zero_rate = zero_curve.get_zero_4dates(as_of_dates=dts,
+                                                       maturity_dates=expiry_date,
+                                                       date_adjust=True) / 100
                 df_out.loc[dts, 'zero'] = zero_rate
                 df_out.loc[dts, 'strike_traded'] = strike_traded
                 df_out.loc[dts, 'days_2_exp'] = days2exp.days
                 df_out.loc[dts, 'strike_theo'] = strike_theo
-                # DEBUG
-                # print('Strike {0}, theo_strike{1} Trade Date - {2}, Expiration {3} '.format(strike_traded,
-                #                                                                             strike_theo,
-                #                                                                             dts,
-                #                                                                             expiry_date))
 
                 df_out.loc[dts, 'bid_1545'] = option_trade_data[option_trade_data['strike'] ==
                                                                 strike_traded]['bid_1545'].iloc[0]
@@ -187,12 +192,10 @@ class OptionSimulation:
                 df_out.loc[dts, 'ask_1545'] = option_trade_data[option_trade_data['strike'] ==
                                                                 strike_traded]['ask_1545'].iloc[0]
 
-                df_out.loc[dts, self.GREEK_COL_NAMES] = option_trade_data[option_trade_data['strike'] ==
-                                                                          strike_traded][self.GREEK_COL_NAMES].iloc[0]
+                df_out.loc[dts, OptionSimulation.GREEK_COL_NAMES] = option_trade_data[option_trade_data['strike'] ==
+                                                        strike_traded][OptionSimulation.GREEK_COL_NAMES].iloc[0]
             dtf_trades.append(df_out)
-
-        sim_output = SimulationParameters(dtf_trades, zscore, sim_dates_live, option_type, str(trade_day_type))
-        return sim_output
+        return dtf_trades
 
     @staticmethod
     def get_simulation_parameters(input_path, file_names):
@@ -361,6 +364,7 @@ class OptionTrades:
         performance = performance.append(self.greeks.mean())
         performance = performance.rename(self.strategy_name)
         performance = performance.to_frame()
+        performance = performance.drop(['active_underlying_price_1545'], axis=0)
 
         return performance
 
@@ -440,12 +444,12 @@ class OptionWeeklySimulation:
         self.zscore = None
         # self.option_data = self.raw_df()
 
-    def trade_sim(self, zscore, option_duration, option_type='P', trade_day_type='EOM'):
+    def trade_sim(self, zscore, option_duration, option_type='P'):
         raw_df = self.raw_df
         raw_df.loc[:, 'option_type'] = raw_df['option_type'].apply(str.upper)
         raw_df = raw_df[raw_df['option_type'] == option_type]
         '''Run option simulation'''
-        print('Running Simulation - Weekly Options - trade_day_type:' + str(trade_day_type) + ' | Z-score ' +
+        print('Running Simulation - Weekly Options - | Z-score ' +
               str(zscore) + ' | Duration ' + str(option_duration.days) + ' Days | Option Type:{}'.format(option_type))
         self.zscore = zscore
         # trade_dates = OptionSimulation.get_trade_dates(self.sim_dates_all, trade_type=trade_day_type)
