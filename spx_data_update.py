@@ -12,7 +12,7 @@ from scipy.io import loadmat
 from pyfolio.timeseries import cum_returns
 from urllib.request import urlretrieve
 import plistlib
-
+import nest_asyncio
 
 from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime, get_asset
 from ib_insync import IB, util, Index
@@ -488,6 +488,7 @@ class IbWrapper:
     def __init__(self, client_id=30):
         """Wrapper function for Interactive Broker API connection"""
         self.ib = IB()
+        nest_asyncio.apply()
         try:
             # IB Gateway
             self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
