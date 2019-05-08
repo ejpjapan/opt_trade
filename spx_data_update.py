@@ -290,7 +290,6 @@ class VixTSM:
         num_bus_days = pd.DataFrame(index=expiries.index, data=np.transpose(num_bus_days), columns=expiries.columns[:-1])
         return num_bus_days
 
-
     @property
     def rolled_idx(self):
         """Returns cumulative return index from long position in vix future"""
