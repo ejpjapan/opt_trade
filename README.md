@@ -14,7 +14,7 @@ Requires directory structure defined in UpdateSP500Data class
 
 ## Authors
 
-* **Edmund Bellord** - *Initial work* - [ejpjapan](https://github.com/ejpapan)
+* **Edmund Bellord** - [ejpjapan](https://github.com/ejpapan)
 
 ## License
 
