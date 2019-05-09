@@ -27,7 +27,7 @@ sim_output = [opt_sim.trade_sim(z_score_strike, option_life_in_months, trade_day
 
 ## Authors
 
-* **Edmund Bellord** - [ejpjapan](https://github.com/ejpapan)
+* **Edmund Bellord** - [ejpjapan](https://github.com/ejpjapan/)
 
 ## License
 
