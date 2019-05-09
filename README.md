@@ -13,6 +13,15 @@ You will need an active connection to an Interactive Brokers TWS or IB Gateway s
 
 Requires directory structure defined in UpdateSP500Data class
 
+### Example
+```python
+z_score_strike = -1
+option_life_in_months = 2
+from option_simulation import OptionSimulation
+opt_sim = OptionSimulation(update_simulation_data=False)
+sim_output = [opt_sim.trade_sim(z_score_strike, option_life_in_months, trade_day_type=day_type) \
+                    for day_type in ['EOM', (0,22)]
+```
 
 ## Authors
 
