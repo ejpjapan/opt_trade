@@ -79,6 +79,10 @@ class SpxOptionAsset(OptionAsset):
         exchange_dict = {'exchange_mkt': 'CBOE', 'exchange_vol': 'CBOE', 'exchange_opt': 'CBOE',
                          'trading_class': trading_class}  # other choice is SPXW
         super().__init__(mkt_symbol, vol_symbol, exchange_dict)
+        if trading_class == 'SPXW':
+            self.settlement_PM = True
+        else:
+            self.settlement_PM = False
 
     def get_sigma_qc(self, vol_symbol, ib, exchange):
         """Returns implied Volatility for market"""
@@ -165,18 +169,19 @@ class RSL2OptionAsset(OptionAsset):
 
 class TradeChoice:
 
-    def __init__(self, tickers, mkt_prices, account_value, z_score, yield_curve, trade_date):
+    def __init__(self, tickers, mkt_prices, account_value, z_score, yield_curve, trade_date, option_expiry):
         self.tickers = tickers
         self.spot = mkt_prices[0]
         self.sigma = mkt_prices[1]
         self.account_value = account_value
         self.z_score = z_score
-        last_trade_dates = [item.contract.lastTradeDateOrContractMonth for item in self.tickers]
-        unique_last_trade_dates = pd.to_datetime(list(dict.fromkeys(last_trade_dates)))
-        self.expirations = unique_last_trade_dates + pd.tseries.offsets.BDay(1)
+        # last_trade_dates = [item.contract.lastTradeDateOrContractMonth for item in self.tickers]
+        # unique_last_trade_dates = pd.to_datetime(list(dict.fromkeys(last_trade_dates)))
+        self.expirations = option_expiry
         self.yield_curve = yield_curve
         self.trade_date = trade_date
 
+    @property
     def strike_grid(self):
         strikes = [item.contract.strike for item in self.tickers]
         strike_array = np.array(strikes).astype(int).reshape(len(self.expirations),
@@ -185,8 +190,8 @@ class TradeChoice:
         df_out = self._format_index(df_out)
         return df_out
 
+    @property
     def premium_grid(self):
-        # Debug
         premium_mid = [item.marketPrice() for item in self.tickers]
         premium_mid = np.round(premium_mid, 2)
         premium_mid = premium_mid.reshape(len(self.expirations),
@@ -195,6 +200,7 @@ class TradeChoice:
         df_out = self._format_index(df_out)
         return df_out
 
+    @property
     def prices_grid(self):
         bid, ask = zip(*[(item.bid, item.ask) for item in self.tickers])
         list_val = [np.array(item).reshape((len(self.expirations),
@@ -205,16 +211,16 @@ class TradeChoice:
         return df_out
 
     def pct_otm_grid(self, last_price):
-        df_out = self.strike_grid() / last_price - 1
+        df_out = self.strike_grid / last_price - 1
         return df_out
 
     def option_lots(self, leverage, capital_at_risk):
-        risk_free = self.yield_curve.get_zero4_date(self.expirations) / 100
+        risk_free = self.yield_curve.get_zero4_date(self.expirations.date) / 100
         option_life = np.array([timeDelta.days / 365 for timeDelta in
                                 [expiryDate - self.trade_date for expiryDate in self.expirations]])
         strike_discount = np.exp(- risk_free.mul(option_life))
-        strike_discount = strike_discount[strike_discount.columns[0]] # convert to series
-        notional_capital = self.strike_grid().mul(strike_discount, axis=0) - self.premium_grid()
+        strike_discount = strike_discount.squeeze()  # convert to series
+        notional_capital = self.strike_grid.mul(strike_discount, axis=0) - self.premium_grid
         contract_lots = [round(capital_at_risk / (notional_capital.copy() / num_leverage * 100), 0)
                          for num_leverage in leverage]
         for counter, df in enumerate(contract_lots):
@@ -224,18 +230,18 @@ class TradeChoice:
 
     def margin(self, last_price):
         # 100% of premium + 20% spot price - (spot-strike)
-        otm_margin = last_price - self.strike_grid()
+        otm_margin = last_price - self.strike_grid
         otm_margin[otm_margin < 0] = 0
-        single_margin_a = (self.premium_grid() + 0.2 * last_price) - (last_price - self.strike_grid())
+        single_margin_a = (self.premium_grid + 0.2 * last_price) - (last_price - self.strike_grid)
         # 100% of premium + 10% * strike
-        single_margin_b = self.premium_grid() + 0.1 * self.strike_grid()
+        single_margin_b = self.premium_grid + 0.1 * self.strike_grid
         margin = pd.concat([single_margin_a, single_margin_b]).max(level=0)
         margin = margin * int(self.tickers[0].contract.multiplier)
         return margin
 
     @staticmethod
     def _format_index(df_in):
-        df_out = df_in.set_index(df_in.index.strftime('%Y.%m.%d'))
+        df_out = df_in.set_index(df_in.index.tz_localize(None).normalize())
         return df_out
 
 
@@ -248,9 +254,10 @@ class OptionMarket:
 
     def __init__(self, opt_asset: OptionAsset):
         self.option_asset = opt_asset
-        self.trade_date = pd.DatetimeIndex([pd.datetime.today()])
+        self.trade_date = pd.DatetimeIndex([pd.datetime.today()], tz='US/Eastern')
         self.zero_curve = USSimpleYieldCurve()
         self.dividend_yield = self.option_asset.get_dividend_yield()
+        self.option_expiry = None
 
     # @time_it
     def form_trade_choice(self, z_score, num_expiries, right='P'):
@@ -281,7 +288,7 @@ class OptionMarket:
         option_tickers = self._option_tickers(ib, mkt_prices, num_expiries, z_score, right)
 
         trd_choice = TradeChoice(option_tickers, mkt_prices, liquidation_value, z_score, self.zero_curve,
-                                 self.trade_date)
+                                 self.trade_date, self.option_expiry)
 
         ib.disconnect()
         return trd_choice
@@ -292,27 +299,39 @@ class OptionMarket:
 
         :param ib: Interactive brokers connection
         :param mkt_prices: List of underlying index and vol index prices
-        :param num_expiries (int): number of expirations
+        :param num_expiries (int or list): number of expirations
         :param z_score (numpy array): Range of Z scores for theoretical option strikes
         :param right (str) : Type of option P or C
         :return: Option tickers
         """
         # option_expiry_1 = third_fridays(self.trade_date, num_expiries)
-
-        last_trade_dates_df = self.option_asset.get_expirations
+        if isinstance(num_expiries, int):
+            num_expiries = range(num_expiries)
+        last_trade_dates_df = self.option_asset.get_expirations.iloc[num_expiries]
         # TO DO Expiration is day after last trade date
         # Might have to revisit for PM settled options
-        option_expiry = last_trade_dates_df.index[0:num_expiries] + pd.tseries.offsets.BDay(1)
-        option_expiry = option_expiry.date
-        risk_free = self.zero_curve.get_zero4_date(option_expiry) / 100
+        if self.option_asset.settlement_PM:
+            self.option_expiry = last_trade_dates_df.index.normalize() + pd.DateOffset(hours=16)
+        else:
+            self.option_expiry = last_trade_dates_df.index + pd.tseries.offsets.BDay(1)
+            self.option_expiry = self.option_expiry.normalize() + pd.DateOffset(hours=9) + pd.DateOffset(minutes=45)
+
+        # option_expiry = self.option_expiry.date
+        # option_expiry = self.option_expiry
+        self.option_expiry = self.option_expiry.tz_localize(tz='US/Eastern')
+
+        risk_free = self.zero_curve.get_zero4_date(self.option_expiry.date) / 100
 
         last_price = mkt_prices[0]
         sigma = mkt_prices[1] / 100
-        theoretical_strikes = get_theoretical_strike(self.trade_date.date, option_expiry,
+        theoretical_strikes = get_theoretical_strike(self.trade_date, self.option_expiry,
                                                      last_price, risk_free.squeeze().values,
                                                      z_score, self.dividend_yield, sigma)
 
-        expiration_date_list = last_trade_dates_df['expirations'].iloc[0:num_expiries].tolist()
+        # expiration_date_list = last_trade_dates_df['expirations'].iloc[:num_expiries].tolist()
+        expiration_date_list = last_trade_dates_df['expirations'].tolist()
+        # expiration_date_list = last_trade_dates_df.index.tolist()
+
         theoretical_strike_list = theoretical_strikes.flatten().tolist()
         expiration_date_list = [item for item in expiration_date_list for _ in range(len(z_score))]
         contracts = [self._get_closest_valid_contract(strike, expiration, ib, right) for strike, expiration in

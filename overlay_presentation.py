@@ -211,8 +211,8 @@ def get_hfr(feather_name, csv_file_path, update_funds=True):
         all_hfr_list = []
         for index_code in index_codes[:-1]: # remove HFR company info
             idx = df['Index Code'] == index_code
-            hfr = df[idx]
-            hfr.loc[:, 'Date'] = pd.to_datetime(hfr.loc[:, 'Date'])
+            hfr = df[idx].copy()
+            hfr['Date'] = hfr['Date'].apply(pd.to_datetime)
             hfr = hfr.set_index(['Date'])
             hfr = hfr.reindex(hfr.index.sort_values())
             hfr_index = hfr['Index Value'].rename(hfr['Index Name'].unique()[0])

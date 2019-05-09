@@ -12,7 +12,7 @@ from scipy.io import loadmat
 from pyfolio.timeseries import cum_returns
 from urllib.request import urlretrieve
 import plistlib
-
+import nest_asyncio
 
 from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime, get_asset
 from ib_insync import IB, util, Index
@@ -49,7 +49,13 @@ class UpdateSP500Data:
 
 class GetRawCBOEOptionData:
     OPTION_TYPES = ['P', 'C']
-    SUBSCRIPTION_STR = '/subscriptions/order_000004576/item_000006417/'
+    # Need to update this string each year for subscription renewal
+    if pd.datetime.today().date() > pd.to_datetime('20-Mar-2020').date():
+        print('Warning - Update subscription string for SPX from CBOE Datashop')
+        exit(0)
+    SUBSCRIPTION_STR = '/subscriptions/order_000008352/item_000011077/'
+    # SUBSCRIPTION_STR = 'order_000008421/item_000011148/'
+
     SYMBOL_DEFINITION_FILE = 'OptionSymbolConversionHistory.xlsx'
 
     def __init__(self, top_level_directory):
@@ -143,12 +149,8 @@ class GetRawCBOEOptionData:
                 # Convert option type to upper cap
                 option_df['option_type'] = option_df['option_type'].apply(str.upper)
                 # Remove SPXW because its the only root that contains SPX
-                # Think about improving this with regex
                 option_df = option_df[~option_df['root'].str.contains('SPXW')]
                 # Create new column of days2Expiry
-        #       option_df['days2Expiry'] = option_df['expiration'] - option_df['quote_date']
-        #       timedelata int64 not stored in feather
-        #       option_df = option_df[option_df['root'] == rootSymbols]
                 option_df = option_df[option_df['root'].str.contains(regex_pattern)]
                 for option_type in self.OPTION_TYPES:
                     df2save = option_df[option_df['option_type'] == option_type]
@@ -156,8 +158,6 @@ class GetRawCBOEOptionData:
                     feather.write_dataframe(df2save, str(out_directory / file_name))
         if archive_files:
             # This makes sure we keep the archive - we will be missing zip and csv
-            # files from March 24th 2018 to March October 10 2018 - will need to re-purchase
-            # if we want to run analysis on weekly options
             for item in os.listdir(in_directory):
                 if item.endswith('.csv'):
                     os.rename(in_directory / item, str(csv_archive_directory / item))
@@ -290,7 +290,6 @@ class VixTSM:
         num_bus_days = pd.DataFrame(index=expiries.index, data=np.transpose(num_bus_days), columns=expiries.columns[:-1])
         return num_bus_days
 
-
     @property
     def rolled_idx(self):
         """Returns cumulative return index from long position in vix future"""
@@ -359,14 +358,14 @@ def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
     return daily_close
 
 
-def get_dates(feather_directory):
+def get_dates(feather_directory, file_type='.feather'):
     """ Fetch dates from feather file names
     :rtype: pd.DatetimeIndex
     """
     regex_pattern = r'\d{4}-\d{2}-\d{2}'  # this will fail if month>12 or days>31
     opt_dates_list = []
     for item in os.listdir(feather_directory):  # loop through items in dir
-        if item.endswith('.feather'):
+        if item.endswith(file_type):
             date_string = re.search(regex_pattern, item)
             if date_string:
                 opt_dates_list.append(date_string.group())
@@ -488,6 +487,7 @@ class IbWrapper:
     def __init__(self, client_id=30):
         """Wrapper function for Interactive Broker API connection"""
         self.ib = IB()
+        nest_asyncio.apply()
         try:
             # IB Gateway
             self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
