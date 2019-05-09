@@ -9,11 +9,13 @@ Project contains classes and functions used to build historical simulations and 
 
 ### Prerequisites
 
-You will need an active connection to an Interactive Brokers TWS or IB Gateway session 
+Requires active session of Interactive Brokers TWS or IB Gateway 
 
 Requires directory structure defined in UpdateSP500Data class
 
 ### Example
+
+Equity index option simulation example
 ```python
 z_score_strike = -1
 option_life_in_months = 2
