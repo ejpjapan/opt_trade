@@ -24,9 +24,9 @@ opt_sim = OptionSimulation(update_simulation_data=False)
 sim_output = [opt_sim.trade_sim(z_score_strike, option_life_in_months, trade_day_type=day_type) \
                     for day_type in ['EOM', (0,22)]
 ```
-Equity index option [notebooks](https://github.com/ejpjapan/jupyter_nb/spx/)
+Equity index option [notebooks](https://github.com/ejpjapan/jupyter_nb/tree/master/spx/)
 
-VIX futures [notebooks](https://github.com/ejpjapan/jupyter_nb/vixp/)
+VIX futures [notebooks](https://github.com/ejpjapan/jupyter_nb/tree/master/vixp/)
 
 ## Authors
 
