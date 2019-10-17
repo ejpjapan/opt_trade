@@ -1,5 +1,5 @@
 from option_utilities import read_feather, write_feather
-from spx_data_update import UpdateSP500Data
+from spx_data_update import UpdateSP500Data, IbWrapper
 from ib_insync import IB, Index, util
 import numpy as np
 import pandas as pd
@@ -24,8 +24,8 @@ class SPX5MinuteBars:
         df_hist = read_feather(UpdateSP500Data.DATA_BASE_PATH / file_name)
         # Download latest
         if update_bars:
-            ib = IB()
-            ib.connect('127.0.0.1', port=4001, clientId=40)
+            ibw = IbWrapper()
+            ib = ibw.ib
             contract = Index('SPX', 'CBOE', 'USD')
             bars = ib.reqHistoricalData(
                 contract,
