@@ -510,8 +510,8 @@ class IbWrapper:
 
 
 def main():
-    updateCBOEfiles = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
-    updateCBOEfiles.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
+    raw_file_updater = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
+    raw_file_updater.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
 
 
 if __name__ == '__main__':
