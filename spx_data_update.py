@@ -501,8 +501,17 @@ class IbWrapper:
                 self.ib.connect('127.0.0.1', port=7497, clientId=client_id)
 
 
+# def main():
+#     _ = UpdateSP500Data()
+#
+#
+# if __name__ == '__main__':
+#     main()
+
+
 def main():
-    _ = UpdateSP500Data()
+    updateCBOEfiles = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
+    updateCBOEfiles.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
 
 
 if __name__ == '__main__':
