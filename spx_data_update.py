@@ -16,7 +16,22 @@ import nest_asyncio
 
 from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime, get_asset
 from ib_insync import IB, util, Index
-from twilio_sms import SMSMessage
+from twilio.rest import Client
+
+
+class SMSMessage:
+    account_sid = 'AC51119e549b9cee8945cc432d27dfa7f8'
+    twilio_sms_number = '+13342343055'
+
+    def __init__(self, sms_text='This message is empty'):
+        client = Client(self.account_sid, config_key('twilio_token'))
+        message = client.messages \
+            .create(
+                body=sms_text,
+                from_=self.twilio_sms_number,
+                to=config_key('cell_number')
+                    )
+        print(message.sid)
 
 
 class UpdateSP500Data:

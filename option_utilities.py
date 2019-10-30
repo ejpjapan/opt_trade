@@ -317,8 +317,7 @@ class USSimpleYieldCurve:
 
 class USZeroYieldCurve:
     """US Zero coupon overnnight to 30 year interpolated yield curve"""
-    # DEBUG
-    ZERO_URL = 'http://www.federalreserve.gov/econresdata/researchdata/feds200628.xls-sdfsd'
+    ZERO_URL = 'http://www.federalreserve.gov/econresdata/researchdata/feds200628.xls'
     DB_PATH = Path.home() / 'Library'/ 'Mobile Documents' / 'com~apple~CloudDocs' / 'localDB' / 'xl'
 
     def __init__(self, update_data=True):
@@ -398,7 +397,7 @@ class USZeroYieldCurve:
             end_time = time()
             print('File updated in ' + str(round(end_time-start_time)) + ' seconds')
         except:
-            print('Zero curve update failed - Zero curve not updated')
+            raise Exception('Zero curve update failed - Zero curve not updated')
 
     @property
     def cash_index(self):
