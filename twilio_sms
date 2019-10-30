@@ -1,0 +1,19 @@
+
+from twilio.rest import Client
+from spx_data_update import config_key
+
+
+class SMSMessage:
+
+    account_sid = 'AC51119e549b9cee8945cc432d27dfa7f8'
+    client = Client(account_sid, config_key('twilio_token'))
+    twilio_sms_number = '+13342343055'
+
+    def __init__(self, sms_text='This message is empty'):
+        message = self.client.messages \
+            .create(
+                body=sms_text,
+                from_=self.twilio_sms_number,
+                to=config_key('cell_number')
+                    )
+        print(message.sid)

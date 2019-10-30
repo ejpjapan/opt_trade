@@ -317,7 +317,8 @@ class USSimpleYieldCurve:
 
 class USZeroYieldCurve:
     """US Zero coupon overnnight to 30 year interpolated yield curve"""
-    ZERO_URL = 'http://www.federalreserve.gov/econresdata/researchdata/feds200628.xls'
+    # DEBUG
+    ZERO_URL = 'http://www.federalreserve.gov/econresdata/researchdata/feds200628.xls-sdfsd'
     DB_PATH = Path.home() / 'Library'/ 'Mobile Documents' / 'com~apple~CloudDocs' / 'localDB' / 'xl'
 
     def __init__(self, update_data=True):

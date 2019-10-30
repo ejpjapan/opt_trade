@@ -16,6 +16,7 @@ import nest_asyncio
 
 from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime, get_asset
 from ib_insync import IB, util, Index
+from twilio_sms import SMSMessage
 
 
 class UpdateSP500Data:
@@ -501,17 +502,18 @@ class IbWrapper:
                 self.ib.connect('127.0.0.1', port=7497, clientId=client_id)
 
 
-# def main():
-#     _ = UpdateSP500Data()
-#
-#
-# if __name__ == '__main__':
-#     main()
-
-
 def main():
-    raw_file_updater = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
-    raw_file_updater.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
+    try:
+        raw_file_updater = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
+        raw_file_updater.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
+    except Exception:
+
+        _ = SMSMessage('CBOE Data download failed')
+
+    try:
+        USZeroYieldCurve(update_data=True)
+    except Exception:
+        _ = SMSMessage('Yield Curve download failed')
 
 
 if __name__ == '__main__':
