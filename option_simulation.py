@@ -80,9 +80,11 @@ class OptionSimulation:
     def _get_expiration_dates(self, option_duration_months, trade_dates):
         """Create expiration dates based on trade dates and number of expiry months"""
         # TODO: Generalize for option_duration_days
-        expiration_theoretical = trade_dates + pd.Timedelta(option_duration_months, unit='M')
+        # expiration_theoretical = trade_dates + pd.Timedelta(option_duration_months, unit='M')
+        # expiration_theoretical = pd.DatetimeIndex(expiration_theoretical.date)
 
-        expiration_theoretical = pd.DatetimeIndex(expiration_theoretical.date)
+        expiration_theoretical = trade_dates + pd.DateOffset(months=option_duration_months)
+
         expiration_actual, available_expiries = get_actual_option_expiries(expiration_theoretical,
                                                                            trade_dates,
                                                                            str(self.feather_directory) +
