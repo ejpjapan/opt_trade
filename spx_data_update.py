@@ -522,9 +522,7 @@ def main():
         raw_file_updater = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
         raw_file_updater.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
     except Exception:
-
         _ = SMSMessage('CBOE Data download failed')
-
     try:
         USZeroYieldCurve(update_data=True)
     except Exception:
