@@ -58,7 +58,7 @@ def invisible_spines(ax):
         ax.spines[key].set_visible(False)
 
 
-def grid_ticks_format(ax_list):
+def m(ax_list):
     """Hide x & y ticks and format grid lines"""
     [ax.grid(color='grey',
              linestyle=':',
