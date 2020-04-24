@@ -523,6 +523,7 @@ def main():
     try:
         raw_file_updater = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
         raw_file_updater.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
+        _ = SMSMessage('Option files downloaded')
     except Exception:
         _ = SMSMessage('CBOE Data download failed')
     try:
