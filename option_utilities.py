@@ -331,8 +331,8 @@ class USZeroYieldCurve:
                 zero_yields_old = read_feather(str(fed_zero_feather))
                 latest_business_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(1)
                 if zero_yields_old.index[-1].date() != latest_business_date.date():
-                    # Check file was updated in last 8 hours
-                    if seconds_since_update > (3600 * 8):
+                    # Check file was updated in last 12 hours
+                    if seconds_since_update > (3600 * 12):
                         self.get_raw_zeros()
             else:
                 self.get_raw_zeros()
