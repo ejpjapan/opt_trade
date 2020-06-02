@@ -90,9 +90,13 @@ class GetRawCBOEOptionData:
     def open_ftp():
         user_dict = data_shop_login()
         "Open ftp connection to CBOE datashop"
-        ftp = FTP(host='ftp.datashop.livevol.com',
-                  user=user_dict['user'],
-                  passwd=user_dict['password'])
+        # ftp = FTP(host='ftp.datashop.livevol.com',
+        #           user=user_dict['user'],
+        #           passwd=user_dict['password'])
+        ftp = FTP(host='sftp.datashop.livevol.com',
+                  user=user_dict['bellord_berkeley_edu'],
+                  passwd=user_dict['pypSur-dogxiq-6zusme'])
+
         return ftp
 
     @staticmethod
