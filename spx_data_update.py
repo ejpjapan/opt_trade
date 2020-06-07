@@ -1,7 +1,8 @@
 import os
 import re
 import zipfile
-from ftplib import FTP
+# from ftplib import FTP
+import pysftp
 from pathlib import Path
 from time import time
 import feather
@@ -87,13 +88,19 @@ class GetRawCBOEOptionData:
         self.root_symbols_str = root_symbols_df['root_symbols'].dropna().str.strip().values
 
     @staticmethod
-    def open_ftp():
+    def open_sftp():
         user_dict = data_shop_login()
         "Open ftp connection to CBOE datashop"
-        ftp = FTP(host='ftp.datashop.livevol.com',
-                  user=user_dict['user'],
-                  passwd=user_dict['password'])
-        return ftp
+        cnopts = pysftp.CnOpts()
+        cnopts.hostkeys = None
+        sftp = pysftp.Connection('sftp.datashop.livevol.com',
+                                 username=user_dict['user'],
+                                 password=user_dict['password'],
+                                 cnopts=cnopts)
+        # ftp = FTP(host='ftp.datashop.livevol.com',
+        #           user=user_dict['user'],
+        #           passwd=user_dict['password'])
+        return sftp
 
     @staticmethod
     def unzip_file(in_directory, out_directory):
@@ -110,14 +117,15 @@ class GetRawCBOEOptionData:
 
     def __get_zip_files(self, output_directory, order_string):
         """Download zip files from order_string to output_directory"""
-        ftp = self.open_ftp()
-        ftp.cwd(order_string)
-        ftp_file_list = ftp.nlst()
-        for file in ftp_file_list:
+        sftp = self.open_sftp()
+        sftp.get_d(order_string, output_directory, preserve_mtime=True)
+        sftp_file_list = sftp.listdir()
+        # ftp.cwd(order_string)
+        # ftp_file_list = ftp.nlst()
+        for file in sftp_file_list:
             if file.endswith('.zip'):
                 print("Downloading..." + file)
-                ftp.retrbinary("RETR " + file, open(output_directory / file, 'wb').write)
-        ftp.close()
+        sftp.close()
 
     def get_subscription_files(self, output_directory: Path):
         if not os.path.isdir(output_directory):
