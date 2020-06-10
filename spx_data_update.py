@@ -119,7 +119,7 @@ class GetRawCBOEOptionData:
         """Download zip files from order_string to output_directory"""
         sftp = self.open_sftp()
         sftp.get_d(order_string, output_directory, preserve_mtime=True)
-        sftp_file_list = sftp.listdir()
+        sftp_file_list = sftp.listdir(order_string)
         # ftp.cwd(order_string)
         # ftp_file_list = ftp.nlst()
         for file in sftp_file_list:
