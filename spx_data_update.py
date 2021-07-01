@@ -67,7 +67,7 @@ class UpdateSP500Data:
 class GetRawCBOEOptionData:
     OPTION_TYPES = ['P', 'C']
     # Need to update this string each year for subscription renewal
-    if pd.datetime.today().date() > pd.to_datetime('20-Mar-2021').date():
+    if pd.datetime.today().date() > pd.to_datetime('20-Mar-2022').date():
         print('Warning - Update subscription string for SPX from CBOE Datashop')
         exit(0)
     SUBSCRIPTION_STR = 'subscriptions/order_000012838/item_000016265/'
@@ -503,7 +503,7 @@ def feather_clean(in_directory):
     for item in all_files:
         if item.endswith('.feather'):
             # Remove options with strikes at 5$
-            option_df = feather.read_dataframe(in_directory / item)
+            option_df = pd.read_feather(in_directory / item)
             idx = option_df['strike'] == 5
             option_df = option_df.drop(option_df.index[idx])
             # # Remove Quarterly options
