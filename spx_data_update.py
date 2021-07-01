@@ -5,7 +5,7 @@ import zipfile
 import pysftp
 from pathlib import Path
 from time import time
-import feather
+# import feather
 import pandas as pd
 import numpy as np
 import quandl
@@ -181,7 +181,9 @@ class GetRawCBOEOptionData:
                 for option_type in self.OPTION_TYPES:
                     df2save = option_df[option_df['option_type'] == option_type]
                     file_name = os.path.splitext(item)[0] + '_' + option_type + '.feather'
-                    feather.write_dataframe(df2save, str(out_directory / file_name))
+                    #
+                    # feather.write_dataframe(df2save, str(out_directory / file_name))
+                    df2save.to_feather(str(out_directory / file_name))
         if archive_files:
             # This makes sure we keep the archive - we will be missing zip and csv
             for item in os.listdir(in_directory):
@@ -377,8 +379,11 @@ def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
     """Retrieve closing price for S&P 500"""
     daily_close = np.empty(len(in_dates))
     for i, item in enumerate(in_dates):
-        dtf = feather.read_dataframe(in_dir + 'UnderlyingOptionsEODCalcs_' +
-                                     item.strftime(format='%Y-%m-%d') + '_P' + '.feather')
+        # dtf = feather.read_dataframe(in_dir + 'UnderlyingOptionsEODCalcs_' +
+        #                              item.strftime(format='%Y-%m-%d') + '_P' + '.feather')
+
+        dtf = pd.read_feather(in_dir + 'UnderlyingOptionsEODCalcs_' +
+                                      item.strftime(format='%Y-%m-%d') + '_P' + '.feather')
         daily_close[i] = dtf['underlying_bid_eod'][0]
     daily_close = pd.DataFrame(data=daily_close, index=in_dates, columns=['sp500_close'])
     return daily_close
@@ -423,6 +428,7 @@ def get_vix():
     ib.disconnect()
     vix = util.df(bars)
     vix = vix.set_index('date')
+    vix.index = pd.to_datetime(vix.index)
     vix = vix[['open', 'high', 'low', 'close']]
 
     vix_history = read_feather(str(UpdateSP500Data.TOP_LEVEL_PATH / 'vix_history'))
@@ -506,7 +512,8 @@ def feather_clean(in_directory):
             # # Remove Monthly options
             # idx2 = option_df['root'] == 'SPXM'
             # option_df = option_df.drop(option_df.index[idx2])
-            feather.write_dataframe(option_df, str(in_directory / item))
+            # feather.write_dataframe(option_df, str(in_directory / item))
+            option_df.to_feather(str(in_directory / item))
 
 
 class IbWrapper:

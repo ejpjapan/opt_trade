@@ -11,7 +11,6 @@ from pathlib import Path
 import numpy as np
 import pandas_datareader.data as web
 from dateutil.relativedelta import relativedelta
-import feather
 from XmlConverter import XmlConverter
 from urllib.request import urlretrieve
 import pandas as pd
@@ -24,7 +23,6 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.ticker import FormatStrFormatter
 import matplotlib.colors as colors
-# from spx_data_update import UpdateSP500Data
 
 
 def time_it(method):
@@ -58,7 +56,7 @@ def invisible_spines(ax):
         ax.spines[key].set_visible(False)
 
 
-def m(ax_list):
+def grid_ticks_format(ax_list):
     """Hide x & y ticks and format grid lines"""
     [ax.grid(color='grey',
              linestyle=':',
@@ -128,7 +126,9 @@ def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font
         text.set_label('mean')
 
     #   Chart 3: Return quantiles
-    pf.plotting.plot_return_quantiles(returns, ax=ax_box_plot)
+    df_weekly = pf.timeseries.aggregate_returns(returns, convert_to='weekly')
+    df_monthly = pf.timeseries.aggregate_returns(returns, convert_to='monthly')
+    pf.plotting.plot_return_quantiles(returns, df_weekly, df_monthly, ax=ax_box_plot)
 
     #   Chart 4: Annual returns
     pf.plotting.plot_annual_returns(returns, ax=ax_yearly)
@@ -175,7 +175,8 @@ def get_actual_option_expiries(expiry_dates_theo, trade_dates, in_dir):
     expiry_dates_actual = []
     all_available_expiry = []
     for i, item in enumerate(expiry_dates_theo):
-        dtf = feather.read_dataframe(in_dir + trade_dates[i].strftime(format='%Y-%m-%d') + '_P' + '.feather')
+        # dtf = feather.read_dataframe(in_dir + trade_dates[i].strftime(format='%Y-%m-%d') + '_P' + '.feather')
+        dtf = pd.read_feather(in_dir + trade_dates[i].strftime(format='%Y-%m-%d') + '_P' + '.feather')
         all_expiration_dates = pd.DatetimeIndex(dtf['expiration'].unique())
         all_expiration_dates = all_expiration_dates.sort_values()
         all_available_expiry.append(all_expiration_dates)
@@ -216,13 +217,18 @@ def get_theoretical_strike(trade_dates, expiry_dates, spot_price, risk_free, z_s
 
 def write_feather(dataframe: pd.DataFrame, path):
     """ Wrapper function for feather.write_dataframe adds row index as column and saves as feather"""
-    dataframe['index'] = dataframe.index
-    feather.write_dataframe(dataframe, path)
+    df = dataframe.copy()
+    df['index'] = df.index
+    df.reset_index(inplace=True, drop=True)
+    # feather.write_dataframe(dataframe, path)
+    df.to_feather(path)
 
 
 def read_feather(path):
     """ Wrapper function feather.read_dataframe adds date columns from index"""
-    out_df = feather.read_dataframe(path)
+    # out_df = feather.read_dataframe(path)
+    out_df = pd.read_feather(path)
+    out_df['index'] = pd.to_datetime(out_df['index'])
     out_df = out_df.set_index(['index'])
     return out_df
 
