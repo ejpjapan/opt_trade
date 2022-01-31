@@ -9,10 +9,10 @@ Created on Thu Mar 29 14:19:37 2018
 import pandas as pd
 import numpy as np
 import pyfolio as pf
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from matplotlib.ticker import FormatStrFormatter
-from pathlib import Path
+# import matplotlib.pyplot as plt
+# import matplotlib.gridspec as gridspec
+# from matplotlib.ticker import FormatStrFormatter
+# from pathlib import Path
 from option_utilities import get_actual_option_expiries, USZeroYieldCurve, get_theoretical_strike, read_feather
 from spx_data_update import UpdateSP500Data, get_dates
 
