@@ -1,21 +1,41 @@
 import os
 import re
 import zipfile
-from ftplib import FTP
+# from ftplib import FTP
+import pysftp
 from pathlib import Path
 from time import time
-import feather
+# import feather
 import pandas as pd
 import numpy as np
 import quandl
+import requests
 from scipy.io import loadmat
 from pyfolio.timeseries import cum_returns
 from urllib.request import urlretrieve
 import plistlib
 import nest_asyncio
+from datetime import datetime
+
 
 from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime, get_asset
 from ib_insync import IB, util, Index
+from twilio.rest import Client
+
+
+class SMSMessage:
+    account_sid = 'AC51119e549b9cee8945cc432d27dfa7f8'
+    twilio_sms_number = '+13342343055'
+
+    def __init__(self, sms_text='This message is empty'):
+        client = Client(self.account_sid, config_key('twilio_token'))
+        message = client.messages \
+            .create(
+                body=sms_text,
+                from_=self.twilio_sms_number,
+                to=config_key('cell_number')
+                    )
+        print(message.sid)
 
 
 class UpdateSP500Data:
@@ -50,10 +70,12 @@ class UpdateSP500Data:
 class GetRawCBOEOptionData:
     OPTION_TYPES = ['P', 'C']
     # Need to update this string each year for subscription renewal
-    if pd.datetime.today().date() > pd.to_datetime('20-Mar-2020').date():
+    if datetime.today().date() > pd.to_datetime('20-Mar-2022').date():
         print('Warning - Update subscription string for SPX from CBOE Datashop')
         exit(0)
-    SUBSCRIPTION_STR = '/subscriptions/order_000008352/item_000011077/'
+    SUBSCRIPTION_STR = 'subscriptions/order_000012838/item_000016265/'
+
+    # SUBSCRIPTION_STR = '/subscriptions/order_000008352/item_000011077/'
     # SUBSCRIPTION_STR = 'order_000008421/item_000011148/'
 
     SYMBOL_DEFINITION_FILE = 'OptionSymbolConversionHistory.xlsx'
@@ -69,13 +91,19 @@ class GetRawCBOEOptionData:
         self.root_symbols_str = root_symbols_df['root_symbols'].dropna().str.strip().values
 
     @staticmethod
-    def open_ftp():
+    def open_sftp():
         user_dict = data_shop_login()
         "Open ftp connection to CBOE datashop"
-        ftp = FTP(host='ftp.datashop.livevol.com',
-                  user=user_dict['user'],
-                  passwd=user_dict['password'])
-        return ftp
+        cnopts = pysftp.CnOpts()
+        cnopts.hostkeys = None
+        sftp = pysftp.Connection('sftp.datashop.livevol.com',
+                                 username=user_dict['user'],
+                                 password=user_dict['password'],
+                                 cnopts=cnopts)
+        # ftp = FTP(host='ftp.datashop.livevol.com',
+        #           user=user_dict['user'],
+        #           passwd=user_dict['password'])
+        return sftp
 
     @staticmethod
     def unzip_file(in_directory, out_directory):
@@ -92,14 +120,15 @@ class GetRawCBOEOptionData:
 
     def __get_zip_files(self, output_directory, order_string):
         """Download zip files from order_string to output_directory"""
-        ftp = self.open_ftp()
-        ftp.cwd(order_string)
-        ftp_file_list = ftp.nlst()
-        for file in ftp_file_list:
+        sftp = self.open_sftp()
+        sftp.get_d(order_string, output_directory, preserve_mtime=True)
+        sftp_file_list = sftp.listdir(order_string)
+        # ftp.cwd(order_string)
+        # ftp_file_list = ftp.nlst()
+        for file in sftp_file_list:
             if file.endswith('.zip'):
                 print("Downloading..." + file)
-                ftp.retrbinary("RETR " + file, open(output_directory / file, 'wb').write)
-        ftp.close()
+        sftp.close()
 
     def get_subscription_files(self, output_directory: Path):
         if not os.path.isdir(output_directory):
@@ -155,7 +184,9 @@ class GetRawCBOEOptionData:
                 for option_type in self.OPTION_TYPES:
                     df2save = option_df[option_df['option_type'] == option_type]
                     file_name = os.path.splitext(item)[0] + '_' + option_type + '.feather'
-                    feather.write_dataframe(df2save, str(out_directory / file_name))
+                    #
+                    # feather.write_dataframe(df2save, str(out_directory / file_name))
+                    df2save.to_feather(str(out_directory / file_name))
         if archive_files:
             # This makes sure we keep the archive - we will be missing zip and csv
             for item in os.listdir(in_directory):
@@ -351,8 +382,11 @@ def get_daily_close(in_dates: pd.DatetimeIndex, in_dir: str):
     """Retrieve closing price for S&P 500"""
     daily_close = np.empty(len(in_dates))
     for i, item in enumerate(in_dates):
-        dtf = feather.read_dataframe(in_dir + 'UnderlyingOptionsEODCalcs_' +
-                                     item.strftime(format='%Y-%m-%d') + '_P' + '.feather')
+        # dtf = feather.read_dataframe(in_dir + 'UnderlyingOptionsEODCalcs_' +
+        #                              item.strftime(format='%Y-%m-%d') + '_P' + '.feather')
+
+        dtf = pd.read_feather(in_dir + 'UnderlyingOptionsEODCalcs_' +
+                                      item.strftime(format='%Y-%m-%d') + '_P' + '.feather')
         daily_close[i] = dtf['underlying_bid_eod'][0]
     daily_close = pd.DataFrame(data=daily_close, index=in_dates, columns=['sp500_close'])
     return daily_close
@@ -397,6 +431,7 @@ def get_vix():
     ib.disconnect()
     vix = util.df(bars)
     vix = vix.set_index('date')
+    vix.index = pd.to_datetime(vix.index)
     vix = vix[['open', 'high', 'low', 'close']]
 
     vix_history = read_feather(str(UpdateSP500Data.TOP_LEVEL_PATH / 'vix_history'))
@@ -471,7 +506,7 @@ def feather_clean(in_directory):
     for item in all_files:
         if item.endswith('.feather'):
             # Remove options with strikes at 5$
-            option_df = feather.read_dataframe(in_directory / item)
+            option_df = pd.read_feather(in_directory / item)
             idx = option_df['strike'] == 5
             option_df = option_df.drop(option_df.index[idx])
             # # Remove Quarterly options
@@ -480,7 +515,8 @@ def feather_clean(in_directory):
             # # Remove Monthly options
             # idx2 = option_df['root'] == 'SPXM'
             # option_df = option_df.drop(option_df.index[idx2])
-            feather.write_dataframe(option_df, str(in_directory / item))
+            # feather.write_dataframe(option_df, str(in_directory / item))
+            option_df.to_feather(str(in_directory / item))
 
 
 class IbWrapper:
@@ -493,16 +529,22 @@ class IbWrapper:
             self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
         except ConnectionRefusedError:
             # TWS
-            try:
-                self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
-            # TWS Paper
-            except ConnectionRefusedError:
-                print('Warning- Connected to Paper Portfolio - Account Values are hypothetical')
-                self.ib.connect('127.0.0.1', port=7497, clientId=client_id)
+            self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
 
 
 def main():
-    _ = UpdateSP500Data()
+    try:
+        raw_file_updater = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
+        raw_file_updater.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
+        _ = SMSMessage('Option files downloaded')
+    except Exception:
+        _ = SMSMessage('CBOE Data download failed')
+
+    try:
+        USZeroYieldCurve(update_data=True)
+        _ = SMSMessage('US Yield Curve Updated')
+    except Exception:
+        _ = SMSMessage('Yield Curve download failed')
 
 
 if __name__ == '__main__':

@@ -5,14 +5,14 @@ Created on Thu Mar 29 14:19:37 2018
 
 @author: macbook2
 """
-import feather
+# import feather
 import pandas as pd
 import numpy as np
 import pyfolio as pf
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from matplotlib.ticker import FormatStrFormatter
-from pathlib import Path
+# import matplotlib.pyplot as plt
+# import matplotlib.gridspec as gridspec
+# from matplotlib.ticker import FormatStrFormatter
+# from pathlib import Path
 from option_utilities import get_actual_option_expiries, USZeroYieldCurve, get_theoretical_strike, read_feather
 from spx_data_update import UpdateSP500Data, get_dates
 
@@ -78,10 +78,12 @@ class OptionSimulation:
         return trade_dates
 
     def _get_expiration_dates(self, option_duration_months, trade_dates):
-        '''Create expiration dates based on trade dates and number of expiry months'''
+        """Create expiration dates based on trade dates and number of expiry months"""
         # TODO: Generalize for option_duration_days
-        expiration_theoretical = trade_dates + pd.Timedelta(option_duration_months, unit='M')
-        expiration_theoretical = pd.DatetimeIndex(expiration_theoretical.date)
+        # expiration_theoretical = trade_dates + pd.Timedelta(option_duration_months, unit='M')
+        # expiration_theoretical = pd.DatetimeIndex(expiration_theoretical.date)
+
+        expiration_theoretical = trade_dates + pd.DateOffset(months=option_duration_months)
         expiration_actual, available_expiries = get_actual_option_expiries(expiration_theoretical,
                                                                            trade_dates,
                                                                            str(self.feather_directory) +
@@ -160,10 +162,14 @@ class OptionSimulation:
                 try:
                     dtf = feather_input[feather_input['quote_date'] == dts]
                 except TypeError:
-                    dtf = feather.read_dataframe(str(feather_input) +
-                                             '/UnderlyingOptionsEODCalcs_' +
-                                             dts.strftime(format='%Y-%m-%d')
-                                             + '_' + option_type + '.feather')
+                    # dtf = feather.read_dataframe(str(feather_input) +
+                    #                          '/UnderlyingOptionsEODCalcs_' +
+                    #                          dts.strftime(format='%Y-%m-%d')
+                    #                          + '_' + option_type + '.feather')
+                    dtf = pd.read_feather(str(feather_input) +
+                                                 '/UnderlyingOptionsEODCalcs_' +
+                                                 dts.strftime(format='%Y-%m-%d')
+                                                 + '_' + option_type + '.feather')
                 # First trade date find traded strike from available strikes based on
                 # theoretical strike
                 if dts == date_slice[0]:
@@ -238,13 +244,13 @@ class SimulationParameters:
 
 
 class OptionTrades:
-    def __init__(self, sim_output: SimulationParameters, leverage: float):
+    def __init__(self, sim_output: SimulationParameters, leverage: float, **kwargs):
         self.simulation_parameters = sim_output
         if np.isscalar(leverage):
             self.leverage = pd.Series(leverage, self.simulation_parameters.sim_dates_live)
         else:
             self.leverage = leverage
-        self.all_returns = self.sell_option()
+        self.all_returns = self.sell_option(**kwargs)
 
     def sell_option(self, trade_mid=True):
         dtf_trades = self.simulation_parameters.dtf_trades
@@ -355,6 +361,7 @@ class OptionTrades:
         # convert returns to series for pyfolio function
         performance = pf.timeseries.perf_stats(self.returns)
         perf_index = list(performance.index)
+        performance = performance['perf_stats']
         performance['StartDate'], performance['EndDate'] = list(self.simulation_parameters.sim_dates_live[[0, -1]]
                                                                 .strftime('%b %d, %Y'))
         performance['Leverage'], performance['ZScore'], performance['Avg_Days'] = [self.leverage.mean(),
@@ -369,55 +376,57 @@ class OptionTrades:
         return performance
 
 
-def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font_size=20):
-
-    fig = plt.figure(figsize=(16, 9))
-    fig.suptitle(returns.name, fontsize=16)
-    gs = gridspec.GridSpec(2, 2, wspace=0.2, hspace=0.3)
-    ax_heatmap = plt.subplot(gs[0, 0])
-    ax_monthly = plt.subplot(gs[0, 1])
-    ax_box_plot = plt.subplot(gs[1, 0])
-    ax_yearly = plt.subplot(gs[1, 1])
-
-    #   Chart 1: Heatmap
-    pf.plotting.plot_monthly_returns_heatmap(returns, ax=ax_heatmap)
-    ax_heatmap.set_xticklabels(np.arange(0.5, 12.5, step=1))
-    ax_heatmap.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-                               rotation=45)
-    ax_heatmap.set_xlabel('')
-    ax_heatmap.set_ylabel('')
-    # ax_heatmap.set_label(rotation=90)
-
-    #   Chart 2: Monthly return distribution
-    pf.plotting.plot_monthly_returns_dist(returns, ax=ax_monthly)
-    ax_monthly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
-    ax_monthly.set_xlabel('')
-    leg1 = ax_monthly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
-    for text in leg1.get_texts():
-        # text.set_color('white')
-        text.set_label('mean')
-
-    #   Chart 3: Return quantiles
-    pf.plotting.plot_return_quantiles(returns, ax=ax_box_plot)
-
-    #   Chart 4: Annual returns
-    pf.plotting.plot_annual_returns(returns, ax=ax_yearly)
-    _ = ax_yearly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
-    ax_yearly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
-    plt.xticks(rotation=45)
-    ax_yearly.set_xlabel('')
-    ax_yearly.set_ylabel('')
-    for ax in [ax_box_plot, ax_heatmap, ax_monthly, ax_yearly]:
-        for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
-                     ax.get_xticklabels() + ax.get_yticklabels()):
-            item.set_fontsize(font_size)
-
-    for items in (ax_yearly.get_yticklabels() + ax_heatmap.get_yticklabels()):
-        items.set_fontsize(font_size - 5)
-    if fig_path is not None:
-        if Path.is_dir(fig_path):
-            plt.savefig(fig_path / fig_name, dpi=600, bbox_inches='tight', transparent=True)
-        return fig
+# def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font_size=20):
+#
+#     fig = plt.figure(figsize=(16, 9))
+#     fig.suptitle(returns.name, fontsize=16)
+#     gs = gridspec.GridSpec(2, 2, wspace=0.2, hspace=0.3)
+#     ax_heatmap = plt.subplot(gs[0, 0])
+#     ax_monthly = plt.subplot(gs[0, 1])
+#     ax_box_plot = plt.subplot(gs[1, 0])
+#     ax_yearly = plt.subplot(gs[1, 1])
+#
+#     #   Chart 1: Heatmap
+#     pf.plotting.plot_monthly_returns_heatmap(returns, ax=ax_heatmap)
+#     ax_heatmap.set_xticklabels(np.arange(0.5, 12.5, step=1))
+#     ax_heatmap.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+#                                rotation=45)
+#     ax_heatmap.set_xlabel('')
+#     ax_heatmap.set_ylabel('')
+#     # ax_heatmap.set_label(rotation=90)
+#
+#     #   Chart 2: Monthly return distribution
+#     pf.plotting.plot_monthly_returns_dist(returns, ax=ax_monthly)
+#     ax_monthly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
+#     ax_monthly.set_xlabel('')
+#     leg1 = ax_monthly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
+#     for text in leg1.get_texts():
+#         # text.set_color('white')
+#         text.set_label('mean')
+#
+#     #   Chart 3: Return quantiles
+#     df_weekly = pf.timeseries.aggregate_returns(returns, convert_to='weekly')
+#     df_monthly = pf.timeseries.aggregate_returns(returns, convert_to='monthly')
+#     pf.plotting.plot_return_quantiles(returns, df_weekly, df_monthly, ax=ax_box_plot)
+#
+#     #   Chart 4: Annual returns
+#     pf.plotting.plot_annual_returns(returns, ax=ax_yearly)
+#     _ = ax_yearly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
+#     ax_yearly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
+#     plt.xticks(rotation=45)
+#     ax_yearly.set_xlabel('')
+#     ax_yearly.set_ylabel('')
+#     for ax in [ax_box_plot, ax_heatmap, ax_monthly, ax_yearly]:
+#         for item in ([ax.title, ax.xaxis.label, ax.yaxis.label] +
+#                      ax.get_xticklabels() + ax.get_yticklabels()):
+#             item.set_fontsize(font_size)
+#
+#     for items in (ax_yearly.get_yticklabels() + ax_heatmap.get_yticklabels()):
+#         items.set_fontsize(font_size - 5)
+#     if fig_path is not None:
+#         if Path.is_dir(fig_path):
+#             plt.savefig(fig_path / fig_name, dpi=600, bbox_inches='tight', transparent=True)
+#         return fig
 
 
 class OptionWeeklySimulation:
@@ -512,7 +521,8 @@ class OptionWeeklySimulation:
 def csv_2_feather(csv_directory):
 
     spxw_feather = UpdateSP500Data.TOP_LEVEL_PATH / 'raw_df.feather'
-    history = feather.read_dataframe(spxw_feather)
+    # history = feather.read_dataframe(spxw_feather)
+    history = pd.read_feather(spxw_feather)
     last_date = pd.DatetimeIndex(history['quote_date'].unique()).sort_values()[-1]
 
     csv_dates = get_dates(csv_directory, file_type='.csv')
@@ -548,7 +558,8 @@ def csv_2_feather(csv_directory):
         raw_df.loc[:, greek_cols] = raw_df.loc[:, greek_cols].apply(pd.to_numeric, errors='coerce')
         raw_df = pd.concat([history, raw_df], axis=0)
         raw_df = raw_df.sort_values('quote_date').reset_index(drop=True)
-        feather.write_dataframe(raw_df, spxw_feather)
+        # feather.write_dataframe(raw_df, spxw_feather)
+        raw_df.to_feather(spxw_feather)
         print('Feather updated')
     except ValueError:
         print('Feather file not updated')
@@ -564,6 +575,3 @@ def csv_2_feather(csv_directory):
     #  'open_interest', 'delivery_code']
 
     return raw_df
-
-
-

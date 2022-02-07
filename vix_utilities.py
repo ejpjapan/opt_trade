@@ -291,7 +291,7 @@ class VixCBOE:
         front_month_bool = day_diff.days <= 0
         back_month_bool = ~front_month_bool
 
-        rolled_return, rolled_future = \
+        rolled_return, rolled_future_price = \
             [pd.concat([item['close2'][back_month_bool], item['close1'][front_month_bool]], axis=0).sort_index()
              for item in [returns, self.closing_prices]]
 
@@ -300,7 +300,7 @@ class VixCBOE:
              for item in [self.expirations, business_days_2_exp]]
 
         rolled_return[0] = np.nan  # replace first empty observation with NaN
-        return rolled_return, rolled_expiries, days_2_exp, rolled_future
+        return rolled_return, rolled_expiries, days_2_exp, rolled_future_price
 
     @property
     def rolled_return(self):
