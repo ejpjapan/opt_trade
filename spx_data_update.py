@@ -9,11 +9,14 @@ from time import time
 import pandas as pd
 import numpy as np
 import quandl
+import requests
 from scipy.io import loadmat
 from pyfolio.timeseries import cum_returns
 from urllib.request import urlretrieve
 import plistlib
 import nest_asyncio
+from datetime import datetime
+
 
 from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime, get_asset
 from ib_insync import IB, util, Index
@@ -67,7 +70,7 @@ class UpdateSP500Data:
 class GetRawCBOEOptionData:
     OPTION_TYPES = ['P', 'C']
     # Need to update this string each year for subscription renewal
-    if pd.datetime.today().date() > pd.to_datetime('20-Mar-2022').date():
+    if datetime.today().date() > pd.to_datetime('20-Mar-2022').date():
         print('Warning - Update subscription string for SPX from CBOE Datashop')
         exit(0)
     SUBSCRIPTION_STR = 'subscriptions/order_000012838/item_000016265/'
@@ -526,12 +529,7 @@ class IbWrapper:
             self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
         except ConnectionRefusedError:
             # TWS
-            try:
-                self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
-            # TWS Paper
-            except ConnectionRefusedError:
-                print('Warning- Connected to Paper Portfolio - Account Values are hypothetical')
-                self.ib.connect('127.0.0.1', port=7497, clientId=client_id)
+            self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
 
 
 def main():
@@ -541,8 +539,10 @@ def main():
         _ = SMSMessage('Option files downloaded')
     except Exception:
         _ = SMSMessage('CBOE Data download failed')
+
     try:
         USZeroYieldCurve(update_data=True)
+        _ = SMSMessage('US Yield Curve Updated')
     except Exception:
         _ = SMSMessage('Yield Curve download failed')
 

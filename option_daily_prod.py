@@ -5,6 +5,8 @@ Created on Tue Nov 13 08:33:48 2018
 
 @author: macbook2
 """
+import datetime
+
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
@@ -45,7 +47,7 @@ class OptionAsset(ABC):
         expirations = pd.DataFrame(list(self.chain.expirations),
                                    index=pd.DatetimeIndex(self.chain.expirations),
                                    columns=['expirations'])
-        timedelta = expirations.index - pd.datetime.today()
+        timedelta = expirations.index - datetime.datetime.today()
         expirations['year_fraction'] = timedelta.days / 365
         # remove negative when latest expiry is today
         expirations = expirations[expirations['year_fraction'] > 0]
@@ -254,7 +256,7 @@ class OptionMarket:
 
     def __init__(self, opt_asset: OptionAsset):
         self.option_asset = opt_asset
-        self.trade_date = pd.DatetimeIndex([pd.datetime.today()], tz='US/Eastern')
+        self.trade_date = pd.DatetimeIndex([datetime.datetime.today()], tz='US/Eastern')
         self.zero_curve = USSimpleYieldCurve()
         self.dividend_yield = self.option_asset.get_dividend_yield()
         self.option_expiry = None
