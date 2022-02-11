@@ -186,7 +186,7 @@ class GetRawCBOEOptionData:
                     file_name = os.path.splitext(item)[0] + '_' + option_type + '.feather'
                     #
                     # feather.write_dataframe(df2save, str(out_directory / file_name))
-                    df2save.to_feather(str(out_directory / file_name))
+                    df2save.reset_index().to_feather(str(out_directory / file_name))
         if archive_files:
             # This makes sure we keep the archive - we will be missing zip and csv
             for item in os.listdir(in_directory):
@@ -536,9 +536,10 @@ def main():
     try:
         raw_file_updater = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
         raw_file_updater.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
-        _ = SMSMessage('Option files downloaded')
     except Exception:
         _ = SMSMessage('CBOE Data download failed')
+    else:
+        _ = SMSMessage('Option files downloaded')
 
     try:
         USZeroYieldCurve(update_data=True)
