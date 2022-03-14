@@ -536,15 +536,17 @@ def main():
     try:
         raw_file_updater = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
         raw_file_updater.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
-        _ = SMSMessage('Option files downloaded')
+        cboe_msg = 'Option files downloaded'
     except Exception:
-        _ = SMSMessage('CBOE Data download failed')
+        cboe_msg = 'CBOE Data download failed'
 
     try:
         USZeroYieldCurve(update_data=True)
-        _ = SMSMessage('US Yield Curve Updated')
+        yld_curve_msg = 'US Yield Curve Updated'
     except Exception:
-        _ = SMSMessage('Yield Curve download failed')
+        yld_curve_msg = 'Yield Curve download failed'
+
+    _ = SMSMessage(cboe_msg + '\n' + yld_curve_msg)
 
 
 if __name__ == '__main__':
