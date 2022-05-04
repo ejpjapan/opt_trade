@@ -9,7 +9,7 @@ from time import time
 import pandas as pd
 import numpy as np
 import quandl
-import requests
+# import requests
 from scipy.io import loadmat
 from pyfolio.timeseries import cum_returns
 from urllib.request import urlretrieve
@@ -24,15 +24,15 @@ from twilio.rest import Client
 
 
 class SMSMessage:
-    account_sid = 'AC51119e549b9cee8945cc432d27dfa7f8'
-    twilio_sms_number = '+13342343055'
 
     def __init__(self, sms_text='This message is empty'):
-        client = Client(self.account_sid, config_key('twilio_token'))
+        # account_sid = config_key('account_sid')
+        # twilio_sms_number = config_key('twilio_sms_number')
+        client = Client(config_key('account_sid'), config_key('twilio_token'))
         message = client.messages \
             .create(
                 body=sms_text,
-                from_=self.twilio_sms_number,
+                from_=config_key('twilio_sms_number'),
                 to=config_key('cell_number')
                     )
         print(message.sid)
@@ -70,9 +70,8 @@ class UpdateSP500Data:
 class GetRawCBOEOptionData:
     OPTION_TYPES = ['P', 'C']
     # Need to update this string each year for subscription renewal
-    if datetime.today().date() > pd.to_datetime('20-Mar-2022').date():
+    if datetime.today().date() > pd.to_datetime('20-Mar-2023').date():
         print('Warning - Update subscription string for SPX from CBOE Datashop')
-        exit(0)
     SUBSCRIPTION_STR = 'subscriptions/order_000012838/item_000016265/'
 
     # SUBSCRIPTION_STR = '/subscriptions/order_000008352/item_000011077/'
