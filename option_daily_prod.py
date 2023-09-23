@@ -10,7 +10,7 @@ import datetime
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
-from ib_insync import Index, Option
+from ib_insync import Index, Option, ContFuture
 from option_utilities import time_it, USSimpleYieldCurve, get_theoretical_strike
 from spx_data_update import DividendYieldHistory, IbWrapper
 from ib_insync.util import isNan
@@ -86,12 +86,32 @@ class SpxOptionAsset(OptionAsset):
         else:
             self.settlement_PM = False
 
+    # def get_sigma_qc(self, vol_symbol, ib, exchange):
+    #     """Returns implied Volatility for market"""
+    #     sigma_index = Index(vol_symbol, exchange)
+    #     sigma_qc = ib.qualifyContracts(sigma_index)
+    #     assert(len(sigma_qc) == 1)
+    #     return sigma_qc[0]
+
     def get_sigma_qc(self, vol_symbol, ib, exchange):
-        """Returns implied Volatility for market"""
-        sigma_index = Index(vol_symbol, exchange)
-        sigma_qc = ib.qualifyContracts(sigma_index)
-        assert(len(sigma_qc) == 1)
-        return sigma_qc[0]
+        """Returns implied Volatility for market - Using continous front month future"""
+
+        # Define the VIX continuous future
+        vix_cont_future = ContFuture('VIX', exchange='CFE')
+
+        # Qualify the contract
+        qualified_contracts = ib.qualifyContracts(vix_cont_future)
+        if qualified_contracts:
+            vix_contract = qualified_contracts[0]
+            ticker = ib.reqMktData(vix_contract)
+            ib.sleep(1)
+
+            # Get the latest price
+            vix_price = ticker.last if ticker.last else ticker.close
+            print(f"VIX Continuous Future Price: {vix_price}")
+        else:
+            print("Could not qualify contract for VIX continuous future.")
+        return qualified_contracts[0]
 
     def get_option_chain(self, underlying_index, ib, exchange):
         """Retrieve IB qualifying options contracts for an index"""

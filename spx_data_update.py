@@ -546,8 +546,8 @@ def main():
     except Exception:
         yld_crv_msg = 'Yield Curve download failed'
 
-    _ = SMSMessage('{0} \n {1}'.format(cboe_msg,
-                                       yld_crv_msg))
+    # _ = SMSMessage('{0} \n {1}'.format(cboe_msg,
+    #                                    yld_crv_msg))
 
 
 if __name__ == '__main__':
