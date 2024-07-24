@@ -6,11 +6,11 @@ Created on Tue Nov 13 08:33:48 2018
 @author: macbook2
 """
 import datetime
-
+from datetime import timedelta
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
-from ib_insync import Index, Option, ContFuture
+from ib_insync import Index, Option, ContFuture, Future
 from option_utilities import time_it, USSimpleYieldCurve, get_theoretical_strike
 from spx_data_update import DividendYieldHistory, IbWrapper
 from ib_insync.util import isNan
@@ -98,20 +98,61 @@ class SpxOptionAsset(OptionAsset):
 
         # Define the VIX continuous future
         vix_cont_future = ContFuture('VIX', exchange='CFE')
+        # print(vix_cont_future)
 
         # Qualify the contract
         qualified_contracts = ib.qualifyContracts(vix_cont_future)
+        # print(qualified_contracts)
         if qualified_contracts:
             vix_contract = qualified_contracts[0]
             ticker = ib.reqMktData(vix_contract)
             ib.sleep(1)
-
+            print(ticker)
             # Get the latest price
-            vix_price = ticker.last if ticker.last else ticker.close
+            vix_price = ticker.marketPrice() if ticker.marketPrice() else ticker.close
             print(f"VIX Continuous Future Price: {vix_price}")
         else:
             print("Could not qualify contract for VIX continuous future.")
-        return qualified_contracts[0]
+
+        # Define the base futures contract for VIX
+        base_future = Future('VIX', exchange='CFE')
+
+        # Fetch all available futures contracts for VIX
+        futures = ib.reqContractDetails(base_future)
+        future_contracts = [cd.contract for cd in futures]
+
+        # Get today's date and the target date one month from today
+        today = datetime.datetime.now().date()
+        target_date = today + timedelta(days=30)
+
+        # Initialize a list to hold the contract details with expiry dates
+        contracts_with_expiry = []
+
+        # Gather expiry dates for each contract
+        for contract in future_contracts:
+            # Parse the expiry date from the contract
+            expiry_date = datetime.datetime.strptime(contract.lastTradeDateOrContractMonth, '%Y%m%d').date()
+            contracts_with_expiry.append((contract, expiry_date))
+
+        # Convert to DataFrame for easier manipulation
+        df = pd.DataFrame(contracts_with_expiry, columns=['Contract', 'ExpiryDate'])
+
+        # Calculate the absolute difference in days from the target date
+        df['DaysToTarget'] = (df['ExpiryDate'] - target_date).abs().dt.days
+
+        # Select the contract with the smallest difference in days to the target date
+        closest_contract = df.loc[df['DaysToTarget'].idxmin()]['Contract']
+
+        # Select the contract with the highest open interest
+        # most_open_interest_contract = df.loc[df['OpenInterest'].idxmax()]['Contract']
+        ticker = ib.reqMktData(closest_contract)
+        ib.sleep(1)
+        vix_price = ticker.marketPrice() if ticker.marketPrice() else ticker.close
+        print(f"VIX One month out: {vix_price}")
+        # print(f'VIX most traded contract month:{ticker}')
+
+        return closest_contract
+        # return qualified_contracts[0]
 
     def get_option_chain(self, underlying_index, ib, exchange):
         """Retrieve IB qualifying options contracts for an index"""
