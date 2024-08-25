@@ -517,18 +517,37 @@ def feather_clean(in_directory):
             # feather.write_dataframe(option_df, str(in_directory / item))
             option_df.to_feather(str(in_directory / item))
 
-
 class IbWrapper:
     def __init__(self, client_id=30):
         """Wrapper function for Interactive Broker API connection"""
         self.ib = IB()
+        self.ib.errorEvent += self.onError  # Attach the error handler
         nest_asyncio.apply()
         try:
-            # IB Gateway
+            # Attempt to connect to IB Gateway
             self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
-        except ConnectionRefusedError:
-            # TWS
-            self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
+        except ConnectionRefusedError as e:
+            print(f"IB Gateway connection failed: {e}. Attempting to connect to TWS...")
+            try:
+                # Attempt to connect to TWS as a fallback
+                self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
+            except ConnectionRefusedError as e:
+                print(f"TWS connection also failed: {e}. Please ensure the API port is open and try again.")
+
+    def onError(self, reqId, errorCode, errorString, contract):
+        """Custom error handling method for the IB API."""
+        if errorCode == 200:
+            print(f"Suppressed Warning: {errorString} for contract: {contract}")
+        else:
+            print(f"Error {errorCode}, reqId {reqId}: {errorString}, contract: {contract}")
+
+
+    def on_error(self, reqId, errorCode, errorString, contract):
+        """Custom error handling method for the IB API."""
+        if errorCode == 200:
+            print(f"Suppressed Warning: {errorString} for contract: {contract}")
+        else:
+            print(f"Error {errorCode}, reqId {reqId}: {errorString}, contract: {contract}")
 
 
 def main():

@@ -16,6 +16,7 @@ from spx_data_update import DividendYieldHistory, IbWrapper
 from ib_insync.util import isNan
 
 
+
 class OptionAsset(ABC):
     def __init__(self, mkt_symbol, vol_symbol, exchange_dict):
         """Abstract class for option asset container"""
