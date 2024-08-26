@@ -14,12 +14,16 @@ from ib_insync import Index, Option, ContFuture, Future
 from option_utilities import time_it, USSimpleYieldCurve, get_theoretical_strike
 from spx_data_update import DividendYieldHistory, IbWrapper
 from ib_insync.util import isNan
+import io
+import contextlib
+import logging
 
 
 
 class OptionAsset(ABC):
     def __init__(self, mkt_symbol, vol_symbol, exchange_dict):
         """Abstract class for option asset container"""
+        self.settlement_PM = None
         exchange_mkt = exchange_dict['exchange_mkt']
         exchange_vol = exchange_dict['exchange_vol']
         exchange_opt = exchange_dict['exchange_opt']
@@ -108,7 +112,7 @@ class SpxOptionAsset(OptionAsset):
             vix_contract = qualified_contracts[0]
             ticker = ib.reqMktData(vix_contract)
             ib.sleep(1)
-            print(ticker)
+            # print(ticker)
             # Get the latest price
             vix_price = ticker.marketPrice() if ticker.marketPrice() else ticker.close
             print(f"VIX Continuous Future Price: {vix_price}")
@@ -357,9 +361,26 @@ class OptionMarket:
         ib.disconnect()
         return trd_choice
 
+    def _calculate_option_expiry(self, last_trade_dates_df):
+        """Calculate the option expiry based on the settlement type."""
+
+        # Assuming SPXW is identified by a trading class or some attribute of the option asset
+        if 'SPXW' in self.option_asset.trading_class:
+            # Logic for SPXW, typically PM settled options
+            option_expiry = last_trade_dates_df.index.normalize() + pd.DateOffset(hours=16)
+        elif self.option_asset.settlement_PM:
+            # General PM settled options logic
+            option_expiry = last_trade_dates_df.index.normalize() + pd.DateOffset(hours=16)
+        else:
+            # AM settled options logic
+            option_expiry = last_trade_dates_df.index + pd.tseries.offsets.BDay(1)
+            option_expiry = option_expiry.normalize() + pd.DateOffset(hours=9) + pd.DateOffset(minutes=45)
+
+        return option_expiry.tz_localize(tz='US/Eastern')
+
     # @time_it
     def _option_tickers(self, ib, mkt_prices, num_expiries, z_score, right):
-        """ Retrieves valid option tickers based on theoretical strikes
+        """ Retrieves valid option tickers based on theoretical strikes.
 
         :param ib: Interactive brokers connection
         :param mkt_prices: List of underlying index and vol index prices
@@ -368,58 +389,51 @@ class OptionMarket:
         :param right (str) : Type of option P or C
         :return: Option tickers
         """
-        # option_expiry_1 = third_fridays(self.trade_date, num_expiries)
+
+        # Validate inputs
+        if not mkt_prices or len(mkt_prices) < 2:
+            raise ValueError("Market prices should contain at least two values: underlying price and volatility.")
+        if not isinstance(z_score, np.ndarray):
+            raise TypeError("z_score should be a numpy array.")
+
+        # Handle single int or list for num_expiries
         if isinstance(num_expiries, int):
             num_expiries = range(num_expiries)
         last_trade_dates_df = self.option_asset.get_expirations.iloc[num_expiries]
-        # TO DO Expiration is day after last trade date
-        # Might have to revisit for PM settled options
-        if self.option_asset.settlement_PM:
-            self.option_expiry = last_trade_dates_df.index.normalize() + pd.DateOffset(hours=16)
-        else:
-            self.option_expiry = last_trade_dates_df.index + pd.tseries.offsets.BDay(1)
-            self.option_expiry = self.option_expiry.normalize() + pd.DateOffset(hours=9) + pd.DateOffset(minutes=45)
 
-        # option_expiry = self.option_expiry.date
-        # option_expiry = self.option_expiry
-        self.option_expiry = self.option_expiry.tz_localize(tz='US/Eastern')
+        # Calculate option expiry
+        self.option_expiry = self._calculate_option_expiry(last_trade_dates_df)
 
+        # Calculate the risk-free rate
         risk_free = self.zero_curve.get_zero4_date(self.option_expiry.date) / 100
 
+        # Get the last price and sigma (volatility)
         last_price = mkt_prices[0]
         sigma = mkt_prices[1] / 100
+
+        # Calculate theoretical strikes
         theoretical_strikes = get_theoretical_strike(self.trade_date, self.option_expiry,
                                                      last_price, risk_free.squeeze().values,
                                                      z_score, self.dividend_yield, sigma)
 
-        # expiration_date_list = last_trade_dates_df['expirations'].iloc[:num_expiries].tolist()
+        # Prepare the list of expiration dates
         expiration_date_list = last_trade_dates_df['expirations'].tolist()
-        # expiration_date_list = last_trade_dates_df.index.tolist()
-
-        theoretical_strike_list = theoretical_strikes.flatten().tolist()
         expiration_date_list = [item for item in expiration_date_list for _ in range(len(z_score))]
-        contracts = [self._get_closest_valid_contract(strike, expiration, ib, right) for strike, expiration in
-                     zip(theoretical_strike_list, expiration_date_list)]
-        contracts_flat = [item for sublist in contracts for item in sublist]
 
-        tickers = ib.reqTickers(*contracts_flat)
+        # Get the closest valid contract for each theoretical strike and expiration date
+        contracts = [self._get_closest_valid_contract(strike, expiration, ib, right)
+                     for strike, expiration in zip(theoretical_strikes.flatten(), expiration_date_list)]
 
-        # Alternative to get live tickers
-        # for contract in contracts_flat:
-        #     ib.reqMktData(contract, '', False, False)
-        #
-        # tickers = [ib.ticker(contract) for contract in contracts_flat]
-        # #debug
-        # print('Waiting for tickers')
-        # ib.sleep(5)
-        # print(tickers)
-        # ib.sleep(5)
-        # print(tickers)
-        # ib.sleep(5)
-        # print(tickers)
-        # ib.sleep(5)
-        # print(tickers)
+        # Pass the list of contracts to reqTickers
+        try:
+            tickers = ib.reqTickers(*contracts)
+            logger.info(f"Successfully retrieved tickers: {tickers}")
+        except Exception as e:
+            logger.error(f"Error retrieving tickers: {e}")
+            raise
+
         return tickers
+
 
     @staticmethod
     def _get_account_tag(ib, tag):
@@ -448,24 +462,51 @@ class OptionMarket:
 
         return mkt_prices
 
+    # def _get_closest_valid_contract(self, theoretical_strike, expiration, ib, right='P'):
+    #     """Return valid contract for expiration closest to theoretical_strike"""
+    #     exchange = self.option_asset.chain.exchange
+    #     symbol = self.option_asset.underlying_qc.symbol
+    #     strikes_sorted = sorted(list(self.option_asset.chain.strikes),
+    #                             key=lambda x: abs(x - theoretical_strike))
+    #     ii = 0
+    #     contract = Option(symbol, expiration, strikes_sorted[ii], right, exchange,
+    #                       tradingClass=self.option_asset.trading_class)
+    #     qualified_contract = validate_contract(ib, contract)
+    #
+    #     # Loop until a valid contract is found or ii exceeds 1000
+    #     while qualified_contract is None and ii < 1000:
+    #         ii += 1
+    #         contract = Option(symbol, expiration, strikes_sorted[ii], right, exchange,
+    #                           tradingClass=self.option_asset.trading_class)
+    #         qualified_contract = validate_contract(ib, contract)
+    #
+    #     # Assertion to break when infinite loop exits after ii > 1000
+    #     assert qualified_contract is not None, "No valid contracts found"
+    #     return qualified_contract
+
     def _get_closest_valid_contract(self, theoretical_strike, expiration, ib, right='P'):
         """Return valid contract for expiration closest to theoretical_strike"""
         exchange = self.option_asset.chain.exchange
         symbol = self.option_asset.underlying_qc.symbol
-        strikes_sorted = sorted(list(self.option_asset.chain.strikes),
-                                key=lambda x: abs(x - theoretical_strike))
-        ii = 0
-        contract = Option(symbol, expiration, strikes_sorted[ii], right, exchange,
-                          tradingClass=self.option_asset.trading_class)
-        qualified_contract = ib.qualifyContracts(contract)
-        while len(qualified_contract) == 0 or ii > 1000:
-            ii = ii + 1
-            contract = Option(symbol, expiration, strikes_sorted[ii], right, exchange)
-            qualified_contract = ib.qualifyContracts(contract)
+        strikes_sorted = sorted(self.option_asset.chain.strikes, key=lambda x: abs(x - theoretical_strike))
 
-        # Assertion to break when infinite loop exits after after ii > 1000
-        assert len(qualified_contract) > 0, "No valid contracts found"
+        for ii, strike in enumerate(strikes_sorted):
+            contract = Option(symbol, expiration, strike, right, exchange, tradingClass=self.option_asset.trading_class)
+            qualified_contract = validate_contract(ib, contract)
+
+            # Log and return the first valid contract found
+            if qualified_contract is not None:
+                logger.info(f"Found valid contract at index {ii} with strike {strike}")
+                return qualified_contract
+
+            # Early exit: if no valid contract is found in a reasonable range
+            if ii > 1000:
+                logger.warning(f"Exceeded 1000 iterations without finding a valid contract")
+                break
+
+        assert qualified_contract is not None, "No valid contracts found"
         return qualified_contract
+
 
     @staticmethod
     def get_closest_valid_twin_contract(qualified_contracts, ib):
@@ -490,3 +531,27 @@ class OptionMarket:
         dividend_yield = np.array(pv_dividends) / (market_price * year_fraction)
 
         return dividend_yield
+
+logging.basicConfig(
+    filename='option_market.log',  # Log file name
+    level=logging.INFO,            # Log level (INFO, DEBUG, etc.)
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Log format
+)
+
+logger = logging.getLogger(__name__)
+
+def validate_contract(ib, contract):
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            qualified_contracts = ib.qualifyContracts(contract)
+
+        if not qualified_contracts:
+            logger.info(f"Invalid contract: {contract}")
+            return None
+        else:
+            logger.info(f"Contract is valid: {qualified_contracts[0]}")
+            return qualified_contracts[0]
+
+    except Exception as e:
+        logger.error(f"An error occurred during contract validation: {e}")
+        return None

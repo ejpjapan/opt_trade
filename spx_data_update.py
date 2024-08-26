@@ -70,8 +70,8 @@ class UpdateSP500Data:
 class GetRawCBOEOptionData:
     OPTION_TYPES = ['P', 'C']
     # Need to update this string each year for subscription renewal
-    if datetime.today().date() > pd.to_datetime('20-Mar-2023').date():
-        print('Warning - Update subscription string for SPX from CBOE Datashop')
+    # if datetime.today().date() > pd.to_datetime('20-Mar-2023').date():
+    #     print('Warning - Update subscription string for SPX from CBOE Datashop')
     SUBSCRIPTION_STR = 'subscriptions/order_000012838/item_000016265/'
     # / subscriptions / order_000012838 / item_000016265 /
     # SUBSCRIPTION_STR = '/subscriptions/order_000008352/item_000011077/'
@@ -517,37 +517,71 @@ def feather_clean(in_directory):
             # feather.write_dataframe(option_df, str(in_directory / item))
             option_df.to_feather(str(in_directory / item))
 
+from ib_insync import IB, Option
+import nest_asyncio
+import contextlib
+import io
+
 class IbWrapper:
     def __init__(self, client_id=30):
         """Wrapper function for Interactive Broker API connection"""
         self.ib = IB()
         self.ib.errorEvent += self.onError  # Attach the error handler
         nest_asyncio.apply()
-        try:
-            # Attempt to connect to IB Gateway
-            self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
-        except ConnectionRefusedError as e:
-            print(f"IB Gateway connection failed: {e}. Attempting to connect to TWS...")
+        self.connect_to_ib(client_id)
+
+    def connect_to_ib(self, client_id):
+        """Attempt to connect to IB Gateway or TWS, suppressing connection errors."""
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):  # Suppress both stdout and stderr
             try:
-                # Attempt to connect to TWS as a fallback
-                self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
-            except ConnectionRefusedError as e:
-                print(f"TWS connection also failed: {e}. Please ensure the API port is open and try again.")
+                # Attempt to connect to IB Gateway
+                self.ib.connect('127.0.0.1', port=4001, clientId=client_id)
+                print("Connected to IB Gateway on port 4001")
+            except ConnectionRefusedError:
+                print("IB Gateway connection failed. Attempting to connect to TWS...")
+                try:
+                    # Attempt to connect to TWS as a fallback
+                    self.ib.connect('127.0.0.1', port=7496, clientId=client_id)
+                    print("Connected to TWS on port 7496")
+                except ConnectionRefusedError:
+                    print("TWS connection also failed. Please ensure the API port is open and try again.")
 
     def onError(self, reqId, errorCode, errorString, contract):
         """Custom error handling method for the IB API."""
-        if errorCode == 200:
-            print(f"Suppressed Warning: {errorString} for contract: {contract}")
-        else:
-            print(f"Error {errorCode}, reqId {reqId}: {errorString}, contract: {contract}")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):  # Suppress both stdout and stderr
+            if errorCode == 200:
+                # Suppress or log the specific Error 200 - No security definition found
+                pass  # Suppressing the output completely
+            elif errorCode in [2104, 2106, 2158]:
+                # These are not errors, just information about data farm connections
+                pass  # Suppressing the output completely
+            else:
+                print(f"Error {errorCode}, reqId {reqId}: {errorString}, contract: {contract}")
 
+    # def request_ticker_data(self, contracts_flat):
+    #     """Request ticker data for the given contracts."""
+    #     # Qualify contracts to ensure they are valid
+    #     qualified_contracts = self.ib.qualifyContracts(*contracts_flat)
+    #     if not qualified_contracts:
+    #         print(f"No valid contracts found in the provided list.")
+    #         return None
+    #
+    #     try:
+    #         # Use the correct method from ib_insync
+    #         tickers = self.ib.reqTickers(*qualified_contracts)
+    #         if not tickers:
+    #             print(f"No ticker data found for the provided contracts.")
+    #             return None
+    #
+    #         for ticker in tickers:
+    #             print(f"Received ticker data: {ticker}")
+    #
+    #         return tickers
+    #
+    #     except Exception as e:
+    #         print(f"An error occurred while requesting ticker data: {e}")
+    #         return None
 
-    def on_error(self, reqId, errorCode, errorString, contract):
-        """Custom error handling method for the IB API."""
-        if errorCode == 200:
-            print(f"Suppressed Warning: {errorString} for contract: {contract}")
-        else:
-            print(f"Error {errorCode}, reqId {reqId}: {errorString}, contract: {contract}")
 
 
 def main():
