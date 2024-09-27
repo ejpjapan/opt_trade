@@ -8,34 +8,36 @@ from time import time
 # import feather
 import pandas as pd
 import numpy as np
-import quandl
+from pandas import DataFrame
+# import quandl
 # import requests
 from scipy.io import loadmat
-from pyfolio.timeseries import cum_returns
+# from pyfolio.timeseries import cum_returns
 from urllib.request import urlretrieve
 import plistlib
+import warnings
 import nest_asyncio
 from datetime import datetime
 
 
 from option_utilities import USZeroYieldCurve, write_feather, read_feather, matlab2datetime, get_asset
 from ib_insync import IB, util, Index
-from twilio.rest import Client
+# from twilio.rest import Client
 
 
-class SMSMessage:
-
-    def __init__(self, sms_text='This message is empty'):
-        # account_sid = config_key('account_sid')
-        # twilio_sms_number = config_key('twilio_sms_number')
-        client = Client(config_key('account_sid'), config_key('twilio_token'))
-        message = client.messages \
-            .create(
-                body=sms_text,
-                from_=config_key('twilio_sms_number'),
-                to=config_key('cell_number')
-                    )
-        print(message.sid)
+# class SMSMessage:
+#
+#     def __init__(self, sms_text='This message is empty'):
+#         # account_sid = config_key('account_sid')
+#         # twilio_sms_number = config_key('twilio_sms_number')
+#         client = Client(config_key('account_sid'), config_key('twilio_token'))
+#         message = client.messages \
+#             .create(
+#                 body=sms_text,
+#                 from_=config_key('twilio_sms_number'),
+#                 to=config_key('cell_number')
+#                     )
+#         print(message.sid)
 
 
 class UpdateSP500Data:
@@ -67,134 +69,353 @@ class UpdateSP500Data:
         self.ClosingPriceHistory.save_daily_close(self.TOP_LEVEL_PATH)
 
 
+# class GetRawCBOEOptionData:
+#     OPTION_TYPES = ['P', 'C']
+#     # Need to update this string each year for subscription renewal
+#     # if datetime.today().date() > pd.to_datetime('20-Mar-2023').date():
+#     #     print('Warning - Update subscription string for SPX from CBOE Datashop')
+#     SUBSCRIPTION_STR = 'subscriptions/order_000012838/item_000016265/'
+#     # / subscriptions / order_000012838 / item_000016265 /
+#     # SUBSCRIPTION_STR = '/subscriptions/order_000008352/item_000011077/'
+#     # SUBSCRIPTION_STR = 'order_000008421/item_000011148/'
+#
+#     SYMBOL_DEFINITION_FILE = 'OptionSymbolConversionHistory.xlsx'
+#
+#     def __init__(self, top_level_directory):
+#
+#         self.top_level_directory = top_level_directory
+#         # Specific to SPX - Get option symbol string
+#         root_symbols_file = self.top_level_directory / self.SYMBOL_DEFINITION_FILE
+#         assert (root_symbols_file.is_file())
+#         root_symbols_df = pd.read_excel(root_symbols_file, sheet_name='spxSymbols', skiprows=[0],
+#                                         usecols=[0], index_col=None, names=['root_symbols'])
+#         self.root_symbols_str = root_symbols_df['root_symbols'].dropna().str.strip().values
+#
+#     @staticmethod
+#     def open_sftp():
+#         user_dict = data_shop_login()
+#         "Open ftp connection to CBOE datashop"
+#         cnopts = pysftp.CnOpts()
+#         cnopts.hostkeys = None
+#         sftp = pysftp.Connection('sftp.datashop.livevol.com',
+#                                  username=user_dict['user'],
+#                                  password=user_dict['password'],
+#                                  cnopts=cnopts)
+#         # ftp = FTP(host='ftp.datashop.livevol.com',
+#         #           user=user_dict['user'],
+#         #           passwd=user_dict['password'])
+#         return sftp
+#
+#     @staticmethod
+#     def unzip_file(in_directory, out_directory):
+#         """Unzip files to csv """
+#         for item in os.listdir(in_directory):  # loop through items in dir
+#             if item.endswith('.zip'):
+#                 file_name = in_directory / item  # get full path of files
+#                 zip_ref = zipfile.ZipFile(file_name)  # create zipfile object
+#                 try:
+#                     zip_ref.extractall(out_directory)  # extract file to dir
+#                 except zipfile.BadZipFile as err:
+#                     print("Zipfile error: {0} for {1}".format(err, item))
+#                 zip_ref.close()  # close file
+#
+#     def __get_zip_files(self, output_directory, order_string):
+#         """Download zip files from order_string to output_directory"""
+#         sftp = self.open_sftp()
+#         sftp.get_d(order_string, output_directory, preserve_mtime=True)
+#         sftp_file_list = sftp.listdir(order_string)
+#         # ftp.cwd(order_string)
+#         # ftp_file_list = ftp.nlst()
+#         for file in sftp_file_list:
+#             if file.endswith('.zip'):
+#                 print("Downloading..." + file)
+#         sftp.close()
+#
+#     def get_subscription_files(self, output_directory: Path):
+#         if not os.path.isdir(output_directory):
+#             os.mkdir(output_directory)
+#         assert(output_directory.is_dir())
+#         self.__get_zip_files(output_directory, self.SUBSCRIPTION_STR)
+#
+#     def update_data_files(self, temporary_file_directory):
+#         """ Download zip files from CBOE, unzip to csv, process and turn into feather
+#         TODO: Should be in separate simulation data update & fetch class that creates/updates database
+#          :rtype: Bool"""
+#         feather_directory = self.top_level_directory / 'feather'
+#         assert(feather_directory.is_dir())
+#         assert temporary_file_directory.is_dir(), '{} directory does not exist'.format(temporary_file_directory)
+#         latest_business_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(1)
+#         opt_dates_all = get_dates(feather_directory)
+#         if opt_dates_all[-1].date() != latest_business_date.date():
+#             start_time = time()
+#             print('Downloading Option data from CBOE')
+#             self.get_subscription_files(temporary_file_directory)
+#             self.unzip_file(temporary_file_directory, temporary_file_directory)
+#             self.csv2feather(temporary_file_directory, feather_directory)
+#             end_time = time()
+#             files_updated = True
+#             print('Option files updated in: ' + str(round(end_time - start_time)) + ' seconds')
+#         else:
+#             files_updated = False
+#             print('Option files not updated')
+#         return files_updated
+#
+#     def csv2feather(self, in_directory, out_directory, archive_files=True):
+#         """Open raw csv files, remove weekly options and all options not in
+#         root_symbols_file build dataframe and convert to feather
+#         archive zip and csv files"""
+#         zip_archive_directory = self.top_level_directory / 'zip'
+#         csv_archive_directory = self.top_level_directory / 'csv'
+#     # Check/create output directory
+#         if not os.path.isdir(out_directory):
+#             os.mkdir(out_directory)
+#         # list of all files in directory (includes .DS_store hidden file)
+#         regex_pattern = '|'.join(self.root_symbols_str)
+#         for item in os.listdir(in_directory):  # loop through items in dir
+#             if item.endswith('.csv'):
+#                 option_df = pd.read_csv(in_directory / item)
+#                 # Convert quote_date and expiration to datetime format
+#                 option_df[['quote_date', 'expiration']] = option_df[['quote_date', 'expiration']].apply(pd.to_datetime)
+#                 # Convert option type to upper cap
+#                 option_df['option_type'] = option_df['option_type'].apply(str.upper)
+#                 # Remove SPXW because its the only root that contains SPX
+#                 option_df = option_df[~option_df['root'].str.contains('SPXW')]
+#                 # Create new column of days2Expiry
+#                 option_df = option_df[option_df['root'].str.contains(regex_pattern)]
+#                 for option_type in self.OPTION_TYPES:
+#                     df2save = option_df[option_df['option_type'] == option_type]
+#                     file_name = os.path.splitext(item)[0] + '_' + option_type + '.feather'
+#                     #
+#                     # feather.write_dataframe(df2save, str(out_directory / file_name))
+#                     df2save.reset_index().to_feather(str(out_directory / file_name))
+#         if archive_files:
+#             # This makes sure we keep the archive - we will be missing zip and csv
+#             for item in os.listdir(in_directory):
+#                 if item.endswith('.csv'):
+#                     os.rename(in_directory / item, str(csv_archive_directory / item))
+#                 elif item.endswith('.zip'):
+#                     os.rename(in_directory / item, str(zip_archive_directory / item))
+#                 else:
+#                     os.remove(in_directory / item)
+
+
+
+
 class GetRawCBOEOptionData:
-    OPTION_TYPES = ['P', 'C']
-    # Need to update this string each year for subscription renewal
-    # if datetime.today().date() > pd.to_datetime('20-Mar-2023').date():
-    #     print('Warning - Update subscription string for SPX from CBOE Datashop')
-    SUBSCRIPTION_STR = 'subscriptions/order_000012838/item_000016265/'
-    # / subscriptions / order_000012838 / item_000016265 /
-    # SUBSCRIPTION_STR = '/subscriptions/order_000008352/item_000011077/'
-    # SUBSCRIPTION_STR = 'order_000008421/item_000011148/'
+    """Class for handling raw option data downloads and processing from the CBOE DataShop."""
 
-    SYMBOL_DEFINITION_FILE = 'OptionSymbolConversionHistory.xlsx'
+    OPTION_TYPES = ['P', 'C']  # Option types: P for Put, C for Call
+    SUBSCRIPTION_STR = 'subscriptions/order_000012838/item_000016265/'  # Subscription string for data access
+    SYMBOL_DEFINITION_FILE = 'OptionSymbolConversionHistory.xlsx'  # Excel file containing symbol conversion history
 
-    def __init__(self, top_level_directory):
+    def __init__(self, top_level_directory: Path):
+        """
+        Initialize with the directory path for storing the data.
 
+        :param top_level_directory: Path object pointing to the top-level directory.
+        """
         self.top_level_directory = top_level_directory
-        # Specific to SPX - Get option symbol string
-        root_symbols_file = self.top_level_directory / self.SYMBOL_DEFINITION_FILE
-        assert (root_symbols_file.is_file())
-        root_symbols_df = pd.read_excel(root_symbols_file, sheet_name='spxSymbols', skiprows=[0],
-                                        usecols=[0], index_col=None, names=['root_symbols'])
-        self.root_symbols_str = root_symbols_df['root_symbols'].dropna().str.strip().values
+        # Load root symbol strings from the Excel file
+        self.root_symbols_str = self._load_symbol_definitions
+
+    @property
+    def _load_symbol_definitions(self) -> list:
+        """
+        Load option symbol string definitions from an Excel file.
+
+        :return: List of root symbol strings.
+        """
+        # Path to the symbol definition file
+        root_symbols_file: Path = self.top_level_directory / self.SYMBOL_DEFINITION_FILE
+
+        # Check if the file exists
+        assert root_symbols_file.is_file(), f"{root_symbols_file} does not exist."
+
+        # Load root symbols from the 'spxSymbols' sheet in the Excel file
+        root_symbols_df: DataFrame = pd.read_excel(root_symbols_file, sheet_name='spxSymbols', skiprows=[0],
+                                        usecols=[0], names=['root_symbols'])
+
+        # Strip whitespace and return as a list of strings
+        return root_symbols_df['root_symbols'].dropna().str.strip().values.tolist()
 
     @staticmethod
     def open_sftp():
-        user_dict = data_shop_login()
-        "Open ftp connection to CBOE datashop"
+        """
+        Open an SFTP connection to CBOE DataShop using stored credentials.
+
+        :return: pysftp.Connection object for SFTP communication.
+        :raises ConnectionError: If unable to establish a connection.
+        """
+        user_dict = data_shop_login()  # Retrieve login credentials
         cnopts = pysftp.CnOpts()
-        cnopts.hostkeys = None
-        sftp = pysftp.Connection('sftp.datashop.livevol.com',
-                                 username=user_dict['user'],
-                                 password=user_dict['password'],
-                                 cnopts=cnopts)
-        # ftp = FTP(host='ftp.datashop.livevol.com',
-        #           user=user_dict['user'],
-        #           passwd=user_dict['password'])
+        cnopts.hostkeys = None  # Disable host key verification for this connection
+
+        # Suppress warning related to host key verification
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+
+        try:
+            # Establish SFTP connection
+            sftp = pysftp.Connection('sftp.datashop.livevol.com',
+                                     username=user_dict['user'],
+                                     password=user_dict['password'],
+                                     cnopts=cnopts)
+        except Exception as e:
+            raise ConnectionError(f"Failed to connect to SFTP: {e}")
+
         return sftp
 
     @staticmethod
-    def unzip_file(in_directory, out_directory):
-        """Unzip files to csv """
-        for item in os.listdir(in_directory):  # loop through items in dir
-            if item.endswith('.zip'):
-                file_name = in_directory / item  # get full path of files
-                zip_ref = zipfile.ZipFile(file_name)  # create zipfile object
-                try:
-                    zip_ref.extractall(out_directory)  # extract file to dir
-                except zipfile.BadZipFile as err:
-                    print("Zipfile error: {0} for {1}".format(err, item))
-                zip_ref.close()  # close file
+    def unzip_files(in_directory: Path, out_directory: Path):
+        """
+        Unzip all .zip files from the input directory into the output directory.
 
-    def __get_zip_files(self, output_directory, order_string):
-        """Download zip files from order_string to output_directory"""
+        :param in_directory: Path object for the input directory containing zip files.
+        :param out_directory: Path object for the output directory to extract files to.
+        """
+        # Loop through all files in the input directory
+        for item in os.listdir(in_directory):
+            if item.endswith('.zip'):
+                file_path = in_directory / item
+                try:
+                    # Extract the contents of the zip file
+                    with zipfile.ZipFile(file_path) as zip_ref:
+                        zip_ref.extractall(out_directory)
+                except zipfile.BadZipFile as err:
+                    print(f"Error extracting {item}: {err}")
+
+    def __get_zip_files(self, output_directory: Path, order_string: str):
+        """
+        Download zip files from the SFTP server into the specified directory.
+
+        :param output_directory: Path object where downloaded zip files will be stored.
+        :param order_string: String for the SFTP folder containing the files.
+        """
+        # Establish SFTP connection
         sftp = self.open_sftp()
+
+        # Download the directory from the server to the local directory
         sftp.get_d(order_string, output_directory, preserve_mtime=True)
+
+        # List the files on the SFTP server
         sftp_file_list = sftp.listdir(order_string)
-        # ftp.cwd(order_string)
-        # ftp_file_list = ftp.nlst()
+
+        # Print the names of the downloaded files
         for file in sftp_file_list:
             if file.endswith('.zip'):
-                print("Downloading..." + file)
-        sftp.close()
+                print(f"Downloading... {file}")
+
+        sftp.close()  # Close the SFTP connection
 
     def get_subscription_files(self, output_directory: Path):
-        if not os.path.isdir(output_directory):
-            os.mkdir(output_directory)
-        assert(output_directory.is_dir())
+        """
+        Download the subscription files from the CBOE DataShop SFTP server.
+
+        :param output_directory: Path object where the downloaded files will be saved.
+        """
+        # Ensure the output directory exists, if not, create it
+        if not output_directory.is_dir():
+            output_directory.mkdir(parents=True)
+
+        # Download the zip files
         self.__get_zip_files(output_directory, self.SUBSCRIPTION_STR)
 
-    def update_data_files(self, temporary_file_directory):
-        """ Download zip files from CBOE, unzip to csv, process and turn into feather
-        TODO: Should be in separate simulation data update & fetch class that creates/updates database
-         :rtype: Bool"""
-        feather_directory = self.top_level_directory / 'feather'
-        assert(feather_directory.is_dir())
-        assert temporary_file_directory.is_dir(), '{} directory does not exist'.format(temporary_file_directory)
-        latest_business_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(1)
-        opt_dates_all = get_dates(feather_directory)
-        if opt_dates_all[-1].date() != latest_business_date.date():
-            start_time = time()
-            print('Downloading Option data from CBOE')
-            self.get_subscription_files(temporary_file_directory)
-            self.unzip_file(temporary_file_directory, temporary_file_directory)
-            self.csv2feather(temporary_file_directory, feather_directory)
-            end_time = time()
-            files_updated = True
-            print('Option files updated in: ' + str(round(end_time - start_time)) + ' seconds')
-        else:
-            files_updated = False
-            print('Option files not updated')
-        return files_updated
+    def update_data_files(self, temporary_file_directory: Path) -> bool:
+        """
+        Download, unzip, process, and update option data if not already up-to-date.
 
-    def csv2feather(self, in_directory, out_directory, archive_files=True):
-        """Open raw csv files, remove weekly options and all options not in
-        root_symbols_file build dataframe and convert to feather
-        archive zip and csv files"""
-        zip_archive_directory = self.top_level_directory / 'zip'
-        csv_archive_directory = self.top_level_directory / 'csv'
-    # Check/create output directory
-        if not os.path.isdir(out_directory):
-            os.mkdir(out_directory)
-        # list of all files in directory (includes .DS_store hidden file)
+        :param temporary_file_directory: Path object for temporary storage of raw files.
+        :return: True if data files were updated, False otherwise.
+        """
+        feather_directory = self.top_level_directory / 'feather'  # Directory for processed data
+        assert feather_directory.is_dir(), f"{feather_directory} does not exist."
+        assert temporary_file_directory.is_dir(), f"{temporary_file_directory} does not exist."
+
+        # Get the most recent business day
+        latest_business_date = pd.to_datetime('today') - pd.tseries.offsets.BDay(1)
+
+        # Retrieve the list of available option dates from the existing data
+        opt_dates_all = get_dates(feather_directory)
+
+        # Check if the data is up-to-date
+        if opt_dates_all[-1].date() != latest_business_date.date():
+            print('Downloading Option data from CBOE...')
+            start_time = time()
+
+            # Download and process the data files
+            self.get_subscription_files(temporary_file_directory)
+            self.unzip_files(temporary_file_directory, temporary_file_directory)
+            self.csv_to_feather(temporary_file_directory, feather_directory)
+
+            end_time = time()
+            print(f"Option files updated in {round(end_time - start_time)} seconds.")
+            return True
+        else:
+            print('Option files are up-to-date.')
+            return False
+
+    def csv_to_feather(self, in_directory: Path, out_directory: Path, archive_files=True):
+        """
+        Convert CSV files to Feather format and optionally archive the original files.
+
+        :param in_directory: Path object containing CSV files.
+        :param out_directory: Path object where Feather files will be stored.
+        :param archive_files: Boolean flag indicating whether to archive the original files.
+        """
+        zip_archive_directory = self.top_level_directory / 'zip'  # Directory for zip file archives
+        csv_archive_directory = self.top_level_directory / 'csv'  # Directory for csv file archives
+
+        # Ensure the output directory exists
+        if not out_directory.is_dir():
+            out_directory.mkdir(parents=True)
+
+        # Compile a regex pattern for filtering option symbols
         regex_pattern = '|'.join(self.root_symbols_str)
-        for item in os.listdir(in_directory):  # loop through items in dir
+
+        # Process each CSV file in the input directory
+        for item in os.listdir(in_directory):
             if item.endswith('.csv'):
-                option_df = pd.read_csv(in_directory / item)
+                file_path = in_directory / item
+                option_df = pd.read_csv(file_path)
+
                 # Convert quote_date and expiration to datetime format
                 option_df[['quote_date', 'expiration']] = option_df[['quote_date', 'expiration']].apply(pd.to_datetime)
-                # Convert option type to upper cap
-                option_df['option_type'] = option_df['option_type'].apply(str.upper)
-                # Remove SPXW because its the only root that contains SPX
+
+                # Ensure option_type is uppercase
+                option_df['option_type'] = option_df['option_type'].str.upper()
+
+                # Remove rows with SPXW root symbol and filter by root_symbols
                 option_df = option_df[~option_df['root'].str.contains('SPXW')]
-                # Create new column of days2Expiry
                 option_df = option_df[option_df['root'].str.contains(regex_pattern)]
+
+                # Save data by option type (P for Put, C for Call) in Feather format
                 for option_type in self.OPTION_TYPES:
-                    df2save = option_df[option_df['option_type'] == option_type]
-                    file_name = os.path.splitext(item)[0] + '_' + option_type + '.feather'
-                    #
-                    # feather.write_dataframe(df2save, str(out_directory / file_name))
-                    df2save.reset_index().to_feather(str(out_directory / file_name))
+                    df_filtered = option_df[option_df['option_type'] == option_type]
+                    file_name = f"{os.path.splitext(item)[0]}_{option_type}.feather"
+                    df_filtered.reset_index().to_feather(out_directory / file_name)
+
+        # Archive the original zip and csv files if required
         if archive_files:
-            # This makes sure we keep the archive - we will be missing zip and csv
-            for item in os.listdir(in_directory):
-                if item.endswith('.csv'):
-                    os.rename(in_directory / item, str(csv_archive_directory / item))
-                elif item.endswith('.zip'):
-                    os.rename(in_directory / item, str(zip_archive_directory / item))
-                else:
-                    os.remove(in_directory / item)
+            self._archive_files(in_directory, csv_archive_directory, zip_archive_directory)
+
+    @staticmethod
+    def _archive_files(in_directory: Path, csv_archive_directory: Path, zip_archive_directory: Path):
+        """
+        Archive CSV and ZIP files by moving them to the archive directories.
+
+        :param in_directory: Path object for the directory containing files to be archived.
+        :param csv_archive_directory: Path object where CSV files will be moved.
+        :param zip_archive_directory: Path object where ZIP files will be moved.
+        """
+        # Move files to their respective archive directories
+        for item in os.listdir(in_directory):
+            file_path = in_directory / item
+            if item.endswith('.csv'):
+                file_path.rename(csv_archive_directory / item)
+            elif item.endswith('.zip'):
+                file_path.rename(zip_archive_directory / item)
+            else:
+                file_path.unlink()  # Remove other non-relevant files
 
 
 class ImpliedVolatilityHistory:
@@ -444,15 +665,15 @@ def get_sp5_dividend_yield():
     """Fetch dividend yield from Quandl'''
     :return: Dataframe
     """
-    quandl.ApiConfig.api_key = quandle_api()
+    # quandl.ApiConfig.api_key = quandle_api()
     # try:
-    spx_dividend_yld = quandl.get('MULTPL/SP500_DIV_YIELD_MONTH', collapse='monthly')
-    spx_dividend_yld = spx_dividend_yld.resample('MS').bfill()
+    # spx_dividend_yld = quandl.get('MULTPL/SP500_DIV_YIELD_MONTH', collapse='monthly')
+    # spx_dividend_yld = spx_di   vidend_yld.resample('MS').bfill()
     # except:
     #     print('Quandl failed - Scraping dividend yield from Mutlp.com')
     # else:
     #     print('Quandl failed - Scraping dividend yield from Mutlp.com')
-    #     spx_dividend_yld = scrape_sp5_div_yield()
+    spx_dividend_yld = scrape_sp5_div_yield()
     return spx_dividend_yld
 
 
@@ -460,7 +681,7 @@ def scrape_sp5_div_yield():
     """Scrape S&P 500 dividend yield from www.multpl.com
     :rtype: pd.Dataframe
     """
-    url = 'http://www.multpl.com/s-p-500-dividend-yield/table?f=m'
+    url = 'https://www.multpl.com/s-p-500-dividend-yield/table/by-month'
     # Package the request, send the request and catch the response: r
     raw_html_tbl = pd.read_html(url)
     dy_df = raw_html_tbl[0]
@@ -526,7 +747,7 @@ class IbWrapper:
     def __init__(self, client_id=30):
         """Wrapper function for Interactive Broker API connection"""
         self.ib = IB()
-        self.ib.errorEvent += self.onError  # Attach the error handler
+        self.ib.errorEvent += self.on_error  # Attach the error handler
         nest_asyncio.apply()
         self.connect_to_ib(client_id)
 
@@ -546,17 +767,18 @@ class IbWrapper:
                 except ConnectionRefusedError:
                     print("TWS connection also failed. Please ensure the API port is open and try again.")
 
-    def onError(self, reqId, errorCode, errorString, contract):
+    @staticmethod
+    def on_error(req_id, error_code, error_string, contract):
         """Custom error handling method for the IB API."""
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):  # Suppress both stdout and stderr
-            if errorCode == 200:
+            if error_code == 200:
                 # Suppress or log the specific Error 200 - No security definition found
                 pass  # Suppressing the output completely
-            elif errorCode in [2104, 2106, 2158]:
+            elif error_code in [2104, 2106, 2158]:
                 # These are not errors, just information about data farm connections
                 pass  # Suppressing the output completely
             else:
-                print(f"Error {errorCode}, reqId {reqId}: {errorString}, contract: {contract}")
+                print(f"Error {error_code}, reqId {req_id}: {error_string}, contract: {contract}")
 
     # def request_ticker_data(self, contracts_flat):
     #     """Request ticker data for the given contracts."""
@@ -585,19 +807,20 @@ class IbWrapper:
 
 
 def main():
-    try:
-        raw_file_updater = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
-        raw_file_updater.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
-    except Exception:
-        cboe_msg = 'CBOE Data download failed'
-    else:
-        cboe_msg = 'Option files downloaded'
+    # try:
+    raw_file_updater = GetRawCBOEOptionData(UpdateSP500Data.TOP_LEVEL_PATH)
+    raw_file_updater.update_data_files(UpdateSP500Data.TOP_LEVEL_PATH / 'test')
+    print('success')
+    # except Exception:
+    #     cboe_msg = 'CBOE Data download failed'
+    # else:
+    #     cboe_msg = 'Option files downloaded'
 
-    try:
-        USZeroYieldCurve(update_data=True)
-        yld_crv_msg = 'US Yield Curve Updated'
-    except Exception:
-        yld_crv_msg = 'Yield Curve download failed'
+    # try:
+    #     USZeroYieldCurve(update_data=True)
+    #     yld_crv_msg = 'US Yield Curve Updated'
+    # except Exception:
+    #     yld_crv_msg = 'Yield Curve download failed'
 
     # _ = SMSMessage('{0} \n {1}'.format(cboe_msg,
     #                                    yld_crv_msg))

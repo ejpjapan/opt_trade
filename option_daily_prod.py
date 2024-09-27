@@ -298,8 +298,8 @@ class TradeChoice:
 
     def margin(self, last_price):
         # 100% of premium + 20% spot price - (spot-strike)
-        otm_margin = last_price - self.strike_grid
-        otm_margin[otm_margin < 0] = 0
+        # otm_margin = last_price - self.strike_grid
+        # otm_margin[otm_margin < 0] = 0
         single_margin_a = (self.premium_grid + 0.2 * last_price) - (last_price - self.strike_grid)
         # 100% of premium + 10% * strike
         single_margin_b = self.premium_grid + 0.1 * self.strike_grid
@@ -439,6 +439,7 @@ class OptionMarket:
     def _get_account_tag(ib, tag):
         account_tag = [v for v in ib.accountValues() if v.tag == tag and v.currency == 'BASE']
         return account_tag
+
 
     @staticmethod
     # @time_it

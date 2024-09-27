@@ -14,11 +14,12 @@ from dateutil.relativedelta import relativedelta
 from XmlConverter import XmlConverter
 from urllib.request import urlretrieve
 import pandas as pd
-import pyfolio as pf
+# import pyfolio as pf
+import ffn as ff
 import matplotlib.transforms as bbox
 from matplotlib import rcParams
 from matplotlib import cm
-import seaborn as sns
+# import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.ticker import FormatStrFormatter
@@ -88,7 +89,7 @@ def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font
     #   Chart 1: Heatmap
     # pf.plotting.plot_monthly_returns_heatmap(returns, ax=ax_heatmap)
 
-    monthly_ret_table = pf.timeseries.aggregate_returns(returns, 'monthly')
+    # monthly_ret_table = pf.timeseries.aggregate_returns(returns, 'monthly')
     monthly_ret_table = monthly_ret_table.unstack().round(3)
     ax = plt.gca()
     cmap = cm.viridis
@@ -117,7 +118,7 @@ def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font
     # ax_heatmap.set_label(rotation=90)
 
     #   Chart 2: Monthly return distribution
-    pf.plotting.plot_monthly_returns_dist(returns, ax=ax_monthly)
+    # pf.plotting.plot_monthly_returns_dist(returns, ax=ax_monthly)
     ax_monthly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
     ax_monthly.set_xlabel('')
     leg1 = ax_monthly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
@@ -126,12 +127,12 @@ def plot_performance_quad(returns, fig_path=None, fig_name='heat_map_quad', font
         text.set_label('mean')
 
     #   Chart 3: Return quantiles
-    df_weekly = pf.timeseries.aggregate_returns(returns, convert_to='weekly')
-    df_monthly = pf.timeseries.aggregate_returns(returns, convert_to='monthly')
+    # df_weekly = pf.timeseries.aggregate_returns(returns, convert_to='weekly')
+    # df_monthly = pf.timeseries.aggregate_returns(returns, convert_to='monthly')
     pf.plotting.plot_return_quantiles(returns, df_weekly, df_monthly, ax=ax_box_plot)
 
     #   Chart 4: Annual returns
-    pf.plotting.plot_annual_returns(returns, ax=ax_yearly)
+    # pf.plotting.plot_annual_returns(returns, ax=ax_yearly)
     _ = ax_yearly.legend(['mean'], framealpha=0.0, prop={'size': font_size})
     ax_yearly.xaxis.set_major_formatter(FormatStrFormatter('%.1f%%'))
     plt.xticks(rotation=45)
@@ -235,7 +236,7 @@ def read_feather(path):
 
 def perf_stats(returns: pd.Series, **kwargs):
     """ Wrapper function for pf.timeseries.performance"""
-    performance = pf.timeseries.perf_stats(returns, **kwargs)
+    # performance = pf.timeseries.perf_stats(returns, **kwargs)
     perf_index = list(performance.index)
     performance['StartDate'], performance['EndDate'] = list(returns.index[[0, -1]]
                                                             .strftime('%b %d, %Y'))
@@ -414,7 +415,8 @@ class USZeroYieldCurve:
         investment_yield = (face_value - tbill_price) / face_value * (365 / 91)
         return_per_day_month = (investment_yield.shift(1) / 12) / investment_yield.shift(1).index.days_in_month
         return_per_day = return_per_day_month.resample('D').bfill()
-        cash_idx = pf.timeseries.cum_returns(return_per_day, 100)
+        cash_idx = ff.to_price_index(return_per_day, 100)
+        # cash_idx = pf.timeseries.cum_returns(return_per_day, 100)
         return cash_idx
 
 
