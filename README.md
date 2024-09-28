@@ -1,3 +1,9 @@
+
+# Historical simulation engin is deprecated as I rebuild the daily production application
+
+The stream directory contains all the code needed to display a bokeh application displaying a live list of SPXW options to trade according algorithm described below
+
+
 # Volatility Trading and Historical Simulation Engine
 
 Project contains classes and functions used to build historical simulations and daily trading estimates for two equity index volatility based investment strategies: 
