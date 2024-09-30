@@ -1,9 +1,8 @@
 from bokeh.io import curdoc
-from bokeh.models import ColumnDataSource, DataTable, TableColumn, Div, Slider
+from bokeh.models import ColumnDataSource, DataTable, TableColumn, Div, Slider, NumberFormatter
 from bokeh.layouts import layout, row, column
 import pandas as pd
 import numpy as np
-# import time
 from ib_insync import Option, Contract, Index, util, ContractDetails, IB, Ticker
 from zoneinfo import ZoneInfo  # Available in Python 3.9 and later
 from datetime import datetime
@@ -513,6 +512,7 @@ def fetch_data(
     single_margin_b = strikes_df['mid'] + 0.1 * strikes_df['closest_strike']
     margin = pd.concat([single_margin_a, single_margin_b], axis=1).max(axis=1)
     strikes_df['Margin'] = margin * 100
+    strikes_df['Margin'] = strikes_df['Margin'] * strikes_df['Lots']
 
     # Drop unnecessary columns and clean up the DataFrame
     out_df = strikes_df.drop(
@@ -526,6 +526,7 @@ def fetch_data(
     out_df['expiry_date'] = out_df['expiry_date'].apply(
         lambda x: datetime.strptime(str(x), '%Y%m%d').strftime('%d %b %Y')
     )
+    out_df['Discount'] = out_df['closest_strike'] / out_df['spot_price'] - 1
     out_df.rename(columns={'closest_strike': 'Strike',
                            'expiry_date': 'Expiry',
                            'bid': 'Bid',
@@ -628,9 +629,21 @@ def create_bokeh_app():
         spx_div = Div(text=f"<b>SPX Price:</b> {out_df.iloc[0]['spot_price']:.2f}")
         vix_div = Div(text=f"<b>VIX Price:</b> {out_df.iloc[0]['sigma'] * 100:.2f}")
 
-        display_cols = ['Expiry', 'Days to Expiry', 'Strike', 'Bid', 'Ask', 'Mid', 'Margin', 'Lots']
-        # Define the columns for the DataTable dynamically based on the DataFrame columns
-        columns = [TableColumn(field=col, title=col) for col in display_cols]
+        display_cols = ['Expiry', 'Days to Expiry', 'Strike', 'Bid', 'Ask', 'Mid', 'Discount', 'Margin', 'Lots']
+        # Mapping of column names to their respective formatters
+        formatter_map = {
+            "Mid": NumberFormatter(format="0.0"),  # One decimal place for Mid
+            "Margin": NumberFormatter(format="$0,0"),  # Currency format for Margin
+            "Discount": NumberFormatter(format="0.00%"),  # Percentage format for Discount
+        }
+
+
+        # Create the columns for the DataTable, applying formatters where necessary
+        columns = [
+            TableColumn(field=col, title=col, formatter=formatter_map.get(col))
+            if formatter_map.get(col) else TableColumn(field=col, title=col)
+            for col in display_cols
+        ]
 
         # Create the DataTable using the data source and defined columns
         data_table = DataTable(
