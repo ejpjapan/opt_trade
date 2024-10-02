@@ -494,7 +494,7 @@ def fetch_data(
     notional_capital = strikes_df['closest_strike'] * strikes_df['strike_discount'] - strikes_df['mid']
 
     # Calculate lots for each leverage level and margin
-    capital_at_risk = illiquid_equity() + float(liquidation_value[0].value)
+    capital_at_risk = illiquid_equity(discount=0.5) + float(liquidation_value[0].value)
     # for num_leverage in [1, 1.5, 2]:
     #     strikes_df[f'lots_leverage_{num_leverage}'] = round(
     #         capital_at_risk / (notional_capital / num_leverage * 100), 0
@@ -628,6 +628,12 @@ def create_bokeh_app():
         # Create Divs to display SPX and VIX prices with default values
         spx_div = Div(text=f"<b>SPX Price:</b> {out_df.iloc[0]['spot_price']:.2f}")
         vix_div = Div(text=f"<b>VIX Price:</b> {out_df.iloc[0]['sigma'] * 100:.2f}")
+        liquidation_value = get_account_tag(ib_wrapper.ib, 'NetLiquidationByCurrency')
+        capital_at_risk = (illiquid_equity(discount=0.5) + float(liquidation_value[0].value)) * lev_slider.value
+
+        account_div_1 = Div(text=f"<b>Liquidation Value:</b> ${float(liquidation_value[0].value):,.0f}")
+        account_div_2 = Div(text=f"<b>Capital at Risk:</b> ${capital_at_risk:,.0f}")
+
 
         display_cols = ['Expiry', 'Days to Expiry', 'Strike', 'Bid', 'Ask', 'Mid', 'Discount', 'Margin', 'Lots']
         # Mapping of column names to their respective formatters
@@ -655,7 +661,7 @@ def create_bokeh_app():
         )
 
         # Create the layout for the Bokeh app
-        app_layout = column(row(spx_div, vix_div), row(lev_slider, z_slider), data_table)
+        app_layout = column(row(spx_div, vix_div, account_div_1, account_div_2), row(lev_slider, z_slider), data_table)
 
         # Periodic callback function to update data every second
         def update():
@@ -685,6 +691,10 @@ def create_bokeh_app():
             # Update SPX and VIX prices in the Divs with conditional color formatting
             spx_div.text = f"<b>SPX Price:</b> <span style='color:{spx_color}'>{current_spx_price:.2f}</span>"
             vix_div.text = f"<b>VIX Price:</b> <span style='color:{vix_color}'>{current_vix_price:.2f}</span>"
+            liquidation_value = get_account_tag(ib_wrapper.ib, 'NetLiquidationByCurrency')
+            capital_at_risk = (illiquid_equity(discount=0.5) + float(liquidation_value[0].value)) * lev_slider.value
+            account_div_1.text = f"<b>Liquidation Value:</b> ${float(liquidation_value[0].value):,.0f}"
+            account_div_2.text = f"<b>Capital at Risk:</b> ${capital_at_risk:,.0f}"
 
         # Add a periodic callback to update the data every 1 second (1000 ms)
         curdoc().add_periodic_callback(update, 1000)
