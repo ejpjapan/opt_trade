@@ -1,15 +1,69 @@
 from bokeh.io import curdoc
-from bokeh.models import ColumnDataSource, DataTable, TableColumn, Div, Slider, NumberFormatter
+from bokeh.models import ColumnDataSource, DataTable, TableColumn, Div, Slider, NumberFormatter, HTMLTemplateFormatter
 from bokeh.layouts import layout, row, column
 import pandas as pd
 import numpy as np
 from ib_insync import Option, Contract, Index, util, ContractDetails, IB, Ticker
 from zoneinfo import ZoneInfo  # Available in Python 3.9 and later
 from datetime import datetime
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Optional
+import time
 
 
 from stream_utilities import IbWrapper, USSimpleYieldCurve, illiquid_equity
+
+MAX_EXPIRIES = 25
+PRICE_UPDATE_MS = 1000
+ACCOUNT_UPDATE_MS = 15000
+
+
+def _best_price(ticker: Optional[Ticker]) -> Optional[float]:
+    if ticker is None:
+        return None
+    price = ticker.marketPrice()
+    if pd.isna(price) or price == 0:
+        for candidate in (ticker.last, ticker.close):
+            if candidate is not None and not pd.isna(candidate):
+                price = candidate
+                break
+    if price is None or pd.isna(price):
+        return None
+    return float(price)
+
+
+def _trend_color(previous: Optional[float], current: Optional[float], existing: str = 'black') -> str:
+    if previous is None or current is None:
+        return existing
+    if pd.isna(previous) or pd.isna(current):
+        return existing
+    if current > previous:
+        return 'green'
+    if current < previous:
+        return 'red'
+    return existing
+
+
+def _format_colored_value(value: Optional[float], color: str, decimals: int) -> str:
+    if value is None or pd.isna(value):
+        return ''
+    return f"<span style='color:{color}'>{value:.{decimals}f}</span>"
+
+
+def _select_option_expiries(option_params_df: pd.DataFrame, max_expiries: int) -> List[datetime]:
+    now = datetime.now(tz=ZoneInfo("America/New_York"))
+    expiries: List[datetime] = []
+    if 'expirations_timestamps' in option_params_df.columns:
+        for exp_list in option_params_df['expirations_timestamps'].dropna().values:
+            if isinstance(exp_list, (list, tuple, set)):
+                expiries.extend(list(exp_list))
+    if not expiries and 'expirations' in option_params_df.columns:
+        for exp_list in option_params_df['expirations'].dropna().values:
+            if isinstance(exp_list, (list, tuple, set)):
+                expiries.extend([datetime.strptime(item, '%Y%m%d').replace(
+                    hour=16, minute=0, second=0, tzinfo=ZoneInfo("America/New_York")
+                ) for item in exp_list])
+    valid = sorted({expiry for expiry in expiries if expiry >= now})
+    return valid[:max_expiries]
 
 
 def convert_to_datestamps(date_lists: List[List[str]]) -> List[List[datetime]]:
@@ -328,6 +382,121 @@ def qualify_all_contracts(
     return strikes_df
 
 
+def _build_strikes_df(
+        ib_wrapper: IbWrapper,
+        option_expiries: List[datetime],
+        risk_free: pd.Series,
+        option_params_df: pd.DataFrame,
+        cache: QualifiedContractsCache,
+        spot_price: float,
+        vix_price: float,
+        z_score: float
+) -> pd.DataFrame:
+    strikes_df = get_theoretical_strike(
+        option_expiries, [spot_price], risk_free, [z_score], 0.013, [vix_price]
+    )
+    strikes_df['expiry_date'] = strikes_df.index
+    available_strikes = option_params_df['strikes'].values[0]
+    strikes_df = qualify_all_contracts(ib_wrapper, strikes_df, available_strikes, cache)
+    strikes_df = strikes_df.reset_index(drop=True)
+
+    for col in ['bid', 'ask', 'last_traded', 'volume', 'market', 'implied_volatility']:
+        strikes_df[col] = np.nan
+    return strikes_df
+
+
+def _recompute_derived_fields(df: pd.DataFrame, base_capital: float, leverage: float) -> None:
+    df['Mid'] = (df['Bid'] + df['Ask']) / 2
+    notional_capital = df['closest_strike'] * df['strike_discount'] - df['Mid']
+    with np.errstate(divide='ignore', invalid='ignore'):
+        df['Lots'] = np.round(base_capital / (notional_capital / leverage * 100), 0)
+
+    single_margin_a = (df['Mid'] + 0.2 * df['spot_price']) - (df['spot_price'] - df['closest_strike'])
+    single_margin_b = df['Mid'] + 0.1 * df['closest_strike']
+    margin = pd.concat([single_margin_a, single_margin_b], axis=1).max(axis=1)
+    df['Margin'] = margin * 100
+    df['Margin'] = df['Margin'] * df['Lots']
+    df['Discount'] = df['closest_strike'] / df['spot_price'] - 1
+
+
+def _build_display_df(strikes_df: pd.DataFrame, leverage: float, base_capital: float) -> pd.DataFrame:
+    df = strikes_df.copy()
+    df['Bid'] = df['bid']
+    df['Ask'] = df['ask']
+    df['Implied Volatility'] = df['implied_volatility']
+    df['Strike'] = df['closest_strike']
+    df['Expiry'] = df['expiry_date'].apply(
+        lambda x: datetime.strptime(str(x), '%Y%m%d').strftime('%d %b %Y')
+    )
+
+    _recompute_derived_fields(df, base_capital, leverage)
+
+    df['BidColor'] = 'black'
+    df['AskColor'] = 'black'
+    df['MidColor'] = 'black'
+    df['BidDisplay'] = [
+        _format_colored_value(value, color, 2) for value, color in zip(df['Bid'], df['BidColor'])
+    ]
+    df['AskDisplay'] = [
+        _format_colored_value(value, color, 2) for value, color in zip(df['Ask'], df['AskColor'])
+    ]
+    df['MidDisplay'] = [
+        _format_colored_value(value, color, 1) for value, color in zip(df['Mid'], df['MidColor'])
+    ]
+
+    df = df.drop(
+        columns=[
+            'option_life',
+            'trade_date',
+            'time_discount',
+            'time_scale',
+            'theoretical_strike',
+            'last_traded',
+            'volume',
+            'market',
+            'qualified_contracts',
+            'bid',
+            'ask',
+            'implied_volatility',
+            'expiry_date',
+        ],
+        errors='ignore'
+    )
+
+    for col in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            df.fillna({col: 0}, inplace=True)
+        else:
+            df.fillna({col: '--'}, inplace=True)
+    return df
+
+
+def _subscribe_option_tickers(ib: IB, qualified_contracts: pd.Series) -> Dict[int, Ticker]:
+    tickers: Dict[int, Ticker] = {}
+    for idx, contract in enumerate(qualified_contracts):
+        if contract is None:
+            continue
+        tickers[idx] = ib.reqMktData(contract, snapshot=False)
+    return tickers
+
+
+def _cancel_market_data(ib: IB, contracts: List[Contract]) -> None:
+    for contract in contracts:
+        if contract is None:
+            continue
+        try:
+            ib.cancelMktData(contract)
+        except Exception:
+            continue
+
+
+def _build_patch(df: pd.DataFrame, columns: List[str]) -> Dict[str, List[tuple]]:
+    return {
+        col: [(i, value) for i, value in enumerate(df[col].tolist())]
+        for col in columns
+    }
+
+
 def get_bid_ask_for_contracts(ib: IB, qualified_contracts: pd.Series) -> pd.DataFrame:
     """
     Fetches bid and ask prices for a list of qualified option contracts from Interactive Brokers (IB).
@@ -365,21 +534,25 @@ def get_bid_ask_for_contracts(ib: IB, qualified_contracts: pd.Series) -> pd.Data
     for contract, ticker in tickers.items():
         retry_attempts = 5  # Max number of retries for invalid bid/ask data
         attempt = 0
-
+        implied_vol = None
         # Retry until valid bid and ask data is received or max retries is reached
-        while (pd.isna(ticker.bid) or pd.isna(ticker.ask)) and attempt < retry_attempts:
+        while (pd.isna(ticker.bid) or pd.isna(ticker.ask)or pd.isna(ticker.modelGreeks)) and attempt < retry_attempts:
             print(f"Invalid bid/ask for {contract}, retrying... (Attempt {attempt + 1})")
             ib.sleep(1)  # Wait for 1 second before retrying
             attempt += 1
 
-        # Append the contract and the data after the bid/ask are valid or after max retries
+        # if ticker.modelGreeks:
+        #     implied_vol = ticker.modelGreeks.impliedVol
+        #     print(f"Implied Volatility: {implied_vol}")
+            # Append the contract and the data after the bid/ask are valid or after max retries
         market_data.append({
             'contract': contract,
-            'bid': ticker.bid if ticker.bid >= 1 else None,  # Use None for invalid bids
-            'ask': ticker.ask if ticker.ask >= 1 else None,  # Use None for invalid asks
+            'bid': ticker.bid,
+            'ask': ticker.ask,
             'last_traded': ticker.last,  # Last traded price
             'volume': ticker.volume,  # Volume for the day
-            'market': ticker.marketPrice()  # Market price (midpoint of bid/ask)
+            'market': ticker.marketPrice(),  # Market price (midpoint of bid/ask)
+            'implied_volatility': ticker.modelGreeks.impliedVol if ticker.modelGreeks else None  # Handle None case
         })
 
     # Convert the market data into a DataFrame
@@ -488,6 +661,7 @@ def fetch_data(
     strikes_df['last_traded'] = market_data_df['last_traded']
     strikes_df['volume'] = market_data_df['volume']
     strikes_df['market'] = market_data_df['market']
+    strikes_df['implied_volatility'] = market_data_df['implied_volatility']
 
     # Step 5: Calculate mid price and other derived metrics
     strikes_df['mid'] = (strikes_df['bid'] + strikes_df['ask']) / 2
@@ -532,6 +706,7 @@ def fetch_data(
                            'bid': 'Bid',
                            'ask': 'Ask',
                             'mid': 'Mid',
+                           'implied_volatility': 'Implied Volatility',
                            }, inplace=True)
 
     # Handle missing values in numerical and non-numerical columns
@@ -588,8 +763,15 @@ def create_bokeh_app():
     """
     Creates a Bokeh app that displays a DataTable with SPX option data and tracks price trends.
     """
+    doc = curdoc()
+    # nuke previous state on refresh
+    doc.clear()
     # Initialize the IBWrapper to connect to Interactive Brokers
     ib_wrapper = IbWrapper()
+    # 1) pre-cleanup
+    if ib_wrapper.ib.isConnected():
+        ib_wrapper.ib.disconnect()
+
 
     # Initialize the cache
     cache = QualifiedContractsCache()
@@ -600,55 +782,82 @@ def create_bokeh_app():
     try:
         # Establish connection to Interactive Brokers
         ib_wrapper.connect_to_ib()
-
-        # Fetch option chain parameters (including expiration dates and strikes)
         option_params_df = fetch_option_chain_via_params(ib_wrapper)
+        option_expiries = _select_option_expiries(option_params_df, MAX_EXPIRIES)
 
-        # Filter valid option expirations based on the current date
-        option_expiries = [
-            expiry for expiry in option_params_df['expirations_timestamps'].values[0]
-            if expiry >= datetime.now(tz=ZoneInfo("America/New_York"))
-        ]
-
-        # Initialize yield curve to fetch risk-free rates for the option expiries
         yld_curve = USSimpleYieldCurve()
         risk_free = yld_curve.get_zero4_date([date.date() for date in option_expiries])
         lev_slider = Slider(start=0.5, end=4, value=1, step=0.5, title="Leverage")
         z_slider = Slider(start=-4, end=4, value=-1, step=1, title="Z-Score")
-        # Fetch the full data set with market prices, strikes, and margins
-        out_df = fetch_data(
-            ib_wrapper, option_expiries, risk_free, option_params_df, cache, leverage=lev_slider.value,
-            z_score=z_slider.value
-        )
 
-        # Set up the data source for the Bokeh DataTable
-        source = ColumnDataSource(out_df)
-        previous_source = ColumnDataSource(out_df.copy())
+        spx_contract = Index('SPX', 'CBOE', 'USD')
+        vix_contract = Index('VIX', 'CBOE', 'USD')
+        spx_contract, vix_contract = ib_wrapper.ib.qualifyContracts(spx_contract, vix_contract)
+        spx_ticker = ib_wrapper.ib.reqMktData(spx_contract, '', snapshot=False)
+        vix_ticker = ib_wrapper.ib.reqMktData(vix_contract, '', snapshot=False)
 
-        # Create Divs to display SPX and VIX prices with default values
-        spx_div = Div(text=f"<b>SPX Price:</b> {out_df.iloc[0]['spot_price']:.2f}")
-        vix_div = Div(text=f"<b>VIX Price:</b> {out_df.iloc[0]['sigma'] * 100:.2f}")
+        start_time = time.time()
+        spx_price = _best_price(spx_ticker)
+        vix_price = _best_price(vix_ticker)
+        while (spx_price is None or vix_price is None) and time.time() - start_time < 2:
+            ib_wrapper.ib.sleep(0.1)
+            spx_price = _best_price(spx_ticker)
+            vix_price = _best_price(vix_ticker)
+        if spx_price is None:
+            spx_price = 0.0
+        if vix_price is None:
+            vix_price = 0.0
+
         liquidation_value = get_account_tag(ib_wrapper.ib, 'NetLiquidationByCurrency')
-        capital_at_risk = (illiquid_equity(discount=0.5) + float(liquidation_value[0].value)) * lev_slider.value
+        liquidation_amount = float(liquidation_value[0].value) if liquidation_value else 0.0
+        base_capital = illiquid_equity(discount=0.5) + liquidation_amount
 
-        account_div_1 = Div(text=f"<b>Liquidation Value:</b> ${float(liquidation_value[0].value):,.0f}")
-        account_div_2 = Div(text=f"<b>Capital at Risk:</b> ${capital_at_risk:,.0f}")
+        strikes_df = _build_strikes_df(
+            ib_wrapper,
+            option_expiries,
+            risk_free,
+            option_params_df,
+            cache,
+            spx_price,
+            vix_price,
+            z_slider.value
+        )
+        option_tickers = _subscribe_option_tickers(ib_wrapper.ib, strikes_df['qualified_contracts'])
+        out_df = _build_display_df(strikes_df, leverage=lev_slider.value, base_capital=base_capital)
 
-
-        display_cols = ['Expiry', 'Days to Expiry', 'Strike', 'Bid', 'Ask', 'Mid', 'Discount', 'Margin', 'Lots']
+        display_fields = ['Expiry', 'Days to Expiry', 'Strike', 'BidDisplay', 'AskDisplay', 'MidDisplay',
+                          'Implied Volatility',
+                          'Discount', 'Margin', 'Lots']
         # Mapping of column names to their respective formatters
         formatter_map = {
-            "Mid": NumberFormatter(format="0.0"),  # One decimal place for Mid
             "Margin": NumberFormatter(format="$0,0"),  # Currency format for Margin
             "Discount": NumberFormatter(format="0.00%"),  # Percentage format for Discount
+            'Implied Volatility': NumberFormatter(format="0.00%"),  # Percentage format for 'Implied Volatility'
         }
+
+        display_df = out_df[display_fields].copy()
+
+        source = ColumnDataSource(display_df)
+
+        spx_div = Div(text=f"<b>SPX Price:</b> {spx_price:.2f}")
+        vix_div = Div(text=f"<b>VIX Price:</b> {vix_price:.2f}")
+        account_div_1 = Div(text=f"<b>Liquidation Value:</b> ${liquidation_amount:,.0f}")
+        account_div_2 = Div(text=f"<b>Capital at Risk:</b> ${base_capital * lev_slider.value:,.0f}")
 
 
         # Create the columns for the DataTable, applying formatters where necessary
         columns = [
-            TableColumn(field=col, title=col, formatter=formatter_map.get(col))
-            if formatter_map.get(col) else TableColumn(field=col, title=col)
-            for col in display_cols
+            TableColumn(field='Expiry', title='Expiry'),
+            TableColumn(field='Days to Expiry', title='Days to Expiry'),
+            TableColumn(field='Strike', title='Strike'),
+            TableColumn(field='BidDisplay', title='Bid', formatter=HTMLTemplateFormatter(template="<%= value %>")),
+            TableColumn(field='AskDisplay', title='Ask', formatter=HTMLTemplateFormatter(template="<%= value %>")),
+            TableColumn(field='MidDisplay', title='Mid', formatter=HTMLTemplateFormatter(template="<%= value %>")),
+            TableColumn(field='Implied Volatility', title='Implied Volatility',
+                        formatter=formatter_map.get('Implied Volatility')),
+            TableColumn(field='Discount', title='Discount', formatter=formatter_map.get('Discount')),
+            TableColumn(field='Margin', title='Margin', formatter=formatter_map.get('Margin')),
+            TableColumn(field='Lots', title='Lots'),
         ]
 
         # Create the DataTable using the data source and defined columns
@@ -662,45 +871,160 @@ def create_bokeh_app():
 
         # Create the layout for the Bokeh app
         app_layout = column(row(spx_div, vix_div, account_div_1, account_div_2), row(lev_slider, z_slider), data_table)
+        doc.add_root(app_layout)
+        state = {
+            "data_df": out_df,
+            "option_tickers": option_tickers,
+            "option_contracts": strikes_df['qualified_contracts'].tolist(),
+            "base_capital": base_capital,
+            "rebuilding": False
+        }
 
-        # Periodic callback function to update data every second
-        def update():
-            # Fetch updated data
-            update_df = fetch_data(ib_wrapper, option_expiries, risk_free, option_params_df, cache,
-                                   leverage=lev_slider.value,   z_score=z_slider.value
-            )
+        patch_columns = [
+            'BidDisplay', 'AskDisplay', 'MidDisplay', 'Implied Volatility',
+            'Discount', 'Margin', 'Lots'
+        ]
 
-            # Store previous data
-            previous_source.data = source.data.copy()
+        def update_account_values():
+            liquidation_value = get_account_tag(ib_wrapper.ib, 'NetLiquidationByCurrency')
+            liquidation_amount = float(liquidation_value[0].value) if liquidation_value else 0.0
+            state['base_capital'] = illiquid_equity(discount=0.5) + liquidation_amount
+            account_div_1.text = f"<b>Liquidation Value:</b> ${liquidation_amount:,.0f}"
+            account_div_2.text = f"<b>Capital at Risk:</b> ${state['base_capital'] * lev_slider.value:,.0f}"
+            if state['data_df'].empty:
+                return
+            _recompute_derived_fields(state['data_df'], state['base_capital'], lev_slider.value)
+            source.patch(_build_patch(state['data_df'], patch_columns))
 
-            # Update the data source with the new data
-            source.data = update_df.to_dict(orient='list')
+        def rebuild_contracts(z_score_value: float) -> None:
+            state['rebuilding'] = True
+            try:
+                _cancel_market_data(ib_wrapper.ib, state['option_contracts'])
+                spot_price = _best_price(spx_ticker)
+                vix_value = _best_price(vix_ticker)
+                if spot_price is None and not state['data_df'].empty:
+                    spot_price = float(state['data_df']['spot_price'].iloc[0])
+                if vix_value is None and not state['data_df'].empty:
+                    vix_value = float(state['data_df']['sigma'].iloc[0]) * 100
+                if spot_price is None:
+                    spot_price = 0.0
+                if vix_value is None:
+                    vix_value = 0.0
 
-            # Grab the current SPX and VIX prices
-            current_spx_price = source.data['spot_price'][0]
-            current_vix_price = source.data['sigma'][0] * 100
+                new_strikes_df = _build_strikes_df(
+                    ib_wrapper,
+                    option_expiries,
+                    risk_free,
+                    option_params_df,
+                    cache,
+                    spot_price,
+                    vix_value,
+                    z_score_value
+                )
+                new_option_tickers = _subscribe_option_tickers(ib_wrapper.ib, new_strikes_df['qualified_contracts'])
+                new_out_df = _build_display_df(
+                    new_strikes_df, leverage=lev_slider.value, base_capital=state['base_capital']
+                )
+                new_display_df = new_out_df[display_fields].copy()
 
-            # Update the price tracker for SPX and VIX
+                state['data_df'] = new_out_df
+                state['option_tickers'] = new_option_tickers
+                state['option_contracts'] = new_strikes_df['qualified_contracts'].tolist()
+                source.data = new_display_df.to_dict(orient='list')
+            finally:
+                state['rebuilding'] = False
+
+        def update_market():
+            if state['rebuilding'] or state['data_df'].empty:
+                return
+
+            data_df = state['data_df']
+            prev_mid_values = data_df['Mid'].copy()
+            spot_price = _best_price(spx_ticker)
+            if spot_price is not None:
+                data_df['spot_price'] = spot_price
+            vix_value = _best_price(vix_ticker)
+            if vix_value is not None:
+                data_df['sigma'] = vix_value / 100
+
+            for idx, ticker in state['option_tickers'].items():
+                if ticker is None:
+                    continue
+                prev_bid = data_df.at[idx, 'Bid']
+                prev_ask = data_df.at[idx, 'Ask']
+                if not pd.isna(ticker.bid):
+                    new_bid = ticker.bid
+                    data_df.at[idx, 'Bid'] = new_bid
+                    data_df.at[idx, 'BidColor'] = _trend_color(
+                        prev_bid, new_bid, data_df.at[idx, 'BidColor']
+                    )
+                if not pd.isna(ticker.ask):
+                    new_ask = ticker.ask
+                    data_df.at[idx, 'Ask'] = new_ask
+                    data_df.at[idx, 'AskColor'] = _trend_color(
+                        prev_ask, new_ask, data_df.at[idx, 'AskColor']
+                    )
+                if ticker.modelGreeks and not pd.isna(ticker.modelGreeks.impliedVol):
+                    data_df.at[idx, 'Implied Volatility'] = ticker.modelGreeks.impliedVol
+
+            _recompute_derived_fields(data_df, state['base_capital'], lev_slider.value)
+            for idx in data_df.index:
+                prev_mid = prev_mid_values.at[idx]
+                new_mid = data_df.at[idx, 'Mid']
+                data_df.at[idx, 'MidColor'] = _trend_color(
+                    prev_mid, new_mid, data_df.at[idx, 'MidColor']
+                )
+            data_df['BidDisplay'] = [
+                _format_colored_value(value, color, 2)
+                for value, color in zip(data_df['Bid'], data_df['BidColor'])
+            ]
+            data_df['AskDisplay'] = [
+                _format_colored_value(value, color, 2)
+                for value, color in zip(data_df['Ask'], data_df['AskColor'])
+            ]
+            data_df['MidDisplay'] = [
+                _format_colored_value(value, color, 1)
+                for value, color in zip(data_df['Mid'], data_df['MidColor'])
+            ]
+            source.patch(_build_patch(data_df, patch_columns))
+
+            current_spx_price = float(data_df['spot_price'].iloc[0])
+            current_vix_price = float(data_df['sigma'].iloc[0]) * 100
             price_tracker.update_price('SPX', current_spx_price)
             price_tracker.update_price('VIX', current_vix_price)
 
-            # Get the trend colors for SPX and VIX
             spx_color = price_tracker.get_trend('SPX')
             vix_color = price_tracker.get_trend('VIX')
-
-            # Update SPX and VIX prices in the Divs with conditional color formatting
             spx_div.text = f"<b>SPX Price:</b> <span style='color:{spx_color}'>{current_spx_price:.2f}</span>"
             vix_div.text = f"<b>VIX Price:</b> <span style='color:{vix_color}'>{current_vix_price:.2f}</span>"
-            liquidation_value = get_account_tag(ib_wrapper.ib, 'NetLiquidationByCurrency')
-            capital_at_risk = (illiquid_equity(discount=0.5) + float(liquidation_value[0].value)) * lev_slider.value
-            account_div_1.text = f"<b>Liquidation Value:</b> ${float(liquidation_value[0].value):,.0f}"
-            account_div_2.text = f"<b>Capital at Risk:</b> ${capital_at_risk:,.0f}"
 
-        # Add a periodic callback to update the data every 1 second (1000 ms)
-        curdoc().add_periodic_callback(update, 1000)
+        def on_leverage_change(attr, old, new):
+            if state['rebuilding'] or state['data_df'].empty:
+                return
+            _recompute_derived_fields(state['data_df'], state['base_capital'], new)
+            source.patch(_build_patch(state['data_df'], patch_columns))
+            account_div_2.text = f"<b>Capital at Risk:</b> ${state['base_capital'] * new:,.0f}"
+
+        def on_z_change(attr, old, new):
+            rebuild_contracts(new)
+
+        lev_slider.on_change('value', on_leverage_change)
+        z_slider.on_change('value', on_z_change)
+
+        update_account_values()
+        doc.add_periodic_callback(update_market, PRICE_UPDATE_MS)
+        doc.add_periodic_callback(update_account_values, ACCOUNT_UPDATE_MS)
+
+        def _cleanup_session(session_context):
+            _cancel_market_data(ib_wrapper.ib, state['option_contracts'])
+            _cancel_market_data(ib_wrapper.ib, [spx_contract, vix_contract])
+            ib_wrapper.disconnect()
+
+        doc.on_session_destroyed(_cleanup_session)
+
 
         # Return the layout for the Bokeh document root
-        return app_layout
+        # return app_layout
 
     except ConnectionError as e:
         # Handle connection errors by logging the error and returning an empty layout
@@ -708,10 +1032,6 @@ def create_bokeh_app():
         return column()  # Return an empty layout if IB connection fails
 
 
-
+create_bokeh_app()
 # Add the Bokeh app layout to the current document root
-curdoc().add_root(create_bokeh_app())
-
-
-
-
+# curdoc().add_root(create_bokeh_app())
