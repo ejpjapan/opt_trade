@@ -1,5 +1,5 @@
 
-# Historical simulation engin is deprecated as I rebuild the daily production application
+# Historical simulation engine is deprecated as I rebuild the daily production application
 
 The stream directory contains all the code needed to display a bokeh application displaying a live list of SPXW options to trade according algorithm described below
 
