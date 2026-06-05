@@ -9,12 +9,38 @@ from datetime import datetime
 from typing import List, Set, Dict, Optional
 import time
 
-
-from stream_utilities import IbWrapper, USSimpleYieldCurve, illiquid_equity
-
-MAX_EXPIRIES = 25
-PRICE_UPDATE_MS = 1000
-ACCOUNT_UPDATE_MS = 15000
+try:
+    from option_stream.config import (
+        ACCOUNT_UPDATE_MS,
+        CURRENCY,
+        DEFAULT_DIVIDEND_YIELD,
+        ILLIQUID_EQUITY_DISCOUNT,
+        INDEX_EXCHANGE,
+        MAX_EXPIRIES,
+        OPTION_EXCHANGE,
+        OPTION_RIGHT,
+        OPTION_TRADING_CLASS,
+        PRICE_UPDATE_MS,
+        UNDERLYING_SYMBOL,
+        VIX_SYMBOL,
+    )
+    from option_stream.stream_utilities import IbWrapper, USSimpleYieldCurve, illiquid_equity
+except ImportError:  # pragma: no cover - supports running from option_stream/
+    from config import (  # type: ignore
+        ACCOUNT_UPDATE_MS,
+        CURRENCY,
+        DEFAULT_DIVIDEND_YIELD,
+        ILLIQUID_EQUITY_DISCOUNT,
+        INDEX_EXCHANGE,
+        MAX_EXPIRIES,
+        OPTION_EXCHANGE,
+        OPTION_RIGHT,
+        OPTION_TRADING_CLASS,
+        PRICE_UPDATE_MS,
+        UNDERLYING_SYMBOL,
+        VIX_SYMBOL,
+    )
+    from stream_utilities import IbWrapper, USSimpleYieldCurve, illiquid_equity
 
 
 def _best_price(ticker: Optional[Ticker]) -> Optional[float]:
@@ -110,7 +136,7 @@ def convert_to_datestamps(date_lists: List[List[str]]) -> List[List[datetime]]:
     return all_datestamps
 
 
-def fetch_option_chain_via_params(ibw, underlying_symbol: str = 'SPX') -> pd.DataFrame:
+def fetch_option_chain_via_params(ibw, underlying_symbol: str = UNDERLYING_SYMBOL) -> pd.DataFrame:
     """
     Fetches the option chain parameters for a given underlying symbol from Interactive Brokers (IB).
 
@@ -131,7 +157,7 @@ def fetch_option_chain_via_params(ibw, underlying_symbol: str = 'SPX') -> pd.Dat
         Output: DataFrame with option chain parameters including expirations converted to EST datetime objects.
     """
     # Define the underlying contract for SPX (Index contract)
-    spx_contract = Index(underlying_symbol, 'CBOE', 'USD')
+    spx_contract = Index(underlying_symbol, INDEX_EXCHANGE, CURRENCY)
 
     # Open a connection to IBWrapper only once
    # ibw.ib  # Access the Interactive Brokers (IB) connection
@@ -155,7 +181,7 @@ def fetch_option_chain_via_params(ibw, underlying_symbol: str = 'SPX') -> pd.Dat
 
     # Filter the DataFrame to include only SPXW options and options listed on the SMART exchange
     filtered_params = option_params_df[
-        (option_params_df['tradingClass'].isin(['SPXW'])) & (option_params_df['exchange'] == 'SMART')
+        (option_params_df['tradingClass'].isin([OPTION_TRADING_CLASS])) & (option_params_df['exchange'] == OPTION_EXCHANGE)
         ].copy()
 
     # Convert expiration dates from strings to datetime objects in EST time zone
@@ -318,13 +344,13 @@ def qualify_all_contracts(
         for strike in alternative_strikes:
             # Create a unique key for the contract
             contract_key = (
-                'SPX',
+                UNDERLYING_SYMBOL,
                 expiry_str,
                 strike,
-                'P',  # Assuming Put options
-                'SMART',
-                'USD',
-                'SPXW'
+                OPTION_RIGHT,
+                OPTION_EXCHANGE,
+                CURRENCY,
+                OPTION_TRADING_CLASS
             )
 
             # Check if the contract is known to be unqualified
@@ -344,13 +370,13 @@ def qualify_all_contracts(
             else:
                 # Create the Option contract
                 option = Option(
-                    symbol='SPX',
+                    symbol=UNDERLYING_SYMBOL,
                     lastTradeDateOrContractMonth=expiry_str,
                     strike=strike,
-                    right='P',
-                    exchange='SMART',
-                    currency='USD',
-                    tradingClass='SPXW'
+                    right=OPTION_RIGHT,
+                    exchange=OPTION_EXCHANGE,
+                    currency=CURRENCY,
+                    tradingClass=OPTION_TRADING_CLASS
                 )
 
                 try:
@@ -393,7 +419,7 @@ def _build_strikes_df(
         z_score: float
 ) -> pd.DataFrame:
     strikes_df = get_theoretical_strike(
-        option_expiries, [spot_price], risk_free, [z_score], 0.013, [vix_price]
+        option_expiries, [spot_price], risk_free, [z_score], DEFAULT_DIVIDEND_YIELD, [vix_price]
     )
     strikes_df['expiry_date'] = strikes_df.index
     available_strikes = option_params_df['strikes'].values[0]
@@ -628,8 +654,8 @@ def fetch_data(
 
         return market_prices
 
-    spx_contract = Index('SPX', 'CBOE', 'USD')
-    vix_contract = Index('VIX', 'CBOE', 'USD')
+    spx_contract = Index(UNDERLYING_SYMBOL, INDEX_EXCHANGE, CURRENCY)
+    vix_contract = Index(VIX_SYMBOL, INDEX_EXCHANGE, CURRENCY)
 
     # Qualify each contract separately
     spx_contract = ib_wrapper.ib.qualifyContracts(spx_contract)[0]
@@ -638,12 +664,12 @@ def fetch_data(
 
 
     # Retrieve the market prices for SPX and VIX
-    spx_price = market_prices['SPX']
-    vix_price = market_prices['VIX']
+    spx_price = market_prices[UNDERLYING_SYMBOL]
+    vix_price = market_prices[VIX_SYMBOL]
 
     # Step 1: Calculate theoretical strikes
     strikes_df = get_theoretical_strike(
-        option_expiries, [spx_price], risk_free, [z_score], 0.013, [vix_price]
+        option_expiries, [spx_price], risk_free, [z_score], DEFAULT_DIVIDEND_YIELD, [vix_price]
     )
     available_strikes = option_params_df['strikes'].values[0]
     strikes_df['expiry_date'] = strikes_df.index
@@ -668,7 +694,7 @@ def fetch_data(
     notional_capital = strikes_df['closest_strike'] * strikes_df['strike_discount'] - strikes_df['mid']
 
     # Calculate lots for each leverage level and margin
-    capital_at_risk = illiquid_equity(discount=0.5) + float(liquidation_value[0].value)
+    capital_at_risk = illiquid_equity(discount=ILLIQUID_EQUITY_DISCOUNT) + float(liquidation_value[0].value)
     # for num_leverage in [1, 1.5, 2]:
     #     strikes_df[f'lots_leverage_{num_leverage}'] = round(
     #         capital_at_risk / (notional_capital / num_leverage * 100), 0
@@ -757,6 +783,32 @@ class PriceTracker:
         """
         return self.trends.get(symbol, 'black')
 
+
+try:
+    from option_stream import stream_core as core
+except ImportError:  # pragma: no cover - supports running from option_stream/
+    import stream_core as core  # type: ignore
+
+_best_price = core._best_price
+_trend_color = core._trend_color
+_format_colored_value = core._format_colored_value
+_select_option_expiries = core._select_option_expiries
+convert_to_datestamps = core.convert_to_datestamps
+fetch_option_chain_via_params = core.fetch_option_chain_via_params
+get_theoretical_strike = core.get_theoretical_strike
+QualifiedContractsCache = core.QualifiedContractsCache
+qualify_all_contracts = core.qualify_all_contracts
+_build_strikes_df = core._build_strikes_df
+_recompute_derived_fields = core._recompute_derived_fields
+_build_display_df = core._build_display_df
+_subscribe_option_tickers = core._subscribe_option_tickers
+_cancel_market_data = core._cancel_market_data
+_build_patch = core._build_patch
+get_bid_ask_for_contracts = core.get_bid_ask_for_contracts
+get_account_tag = core.get_account_tag
+PriceTracker = core.PriceTracker
+
+
 # Update create_bokeh_app to pass arguments to fetch_data
 # Integrate the PriceTracker class into the Bokeh app
 def create_bokeh_app():
@@ -790,8 +842,8 @@ def create_bokeh_app():
         lev_slider = Slider(start=0.5, end=4, value=1, step=0.5, title="Leverage")
         z_slider = Slider(start=-4, end=4, value=-1, step=1, title="Z-Score")
 
-        spx_contract = Index('SPX', 'CBOE', 'USD')
-        vix_contract = Index('VIX', 'CBOE', 'USD')
+        spx_contract = Index(UNDERLYING_SYMBOL, INDEX_EXCHANGE, CURRENCY)
+        vix_contract = Index(VIX_SYMBOL, INDEX_EXCHANGE, CURRENCY)
         spx_contract, vix_contract = ib_wrapper.ib.qualifyContracts(spx_contract, vix_contract)
         spx_ticker = ib_wrapper.ib.reqMktData(spx_contract, '', snapshot=False)
         vix_ticker = ib_wrapper.ib.reqMktData(vix_contract, '', snapshot=False)
@@ -810,7 +862,7 @@ def create_bokeh_app():
 
         liquidation_value = get_account_tag(ib_wrapper.ib, 'NetLiquidationByCurrency')
         liquidation_amount = float(liquidation_value[0].value) if liquidation_value else 0.0
-        base_capital = illiquid_equity(discount=0.5) + liquidation_amount
+        base_capital = illiquid_equity(discount=ILLIQUID_EQUITY_DISCOUNT) + liquidation_amount
 
         strikes_df = _build_strikes_df(
             ib_wrapper,
@@ -839,8 +891,8 @@ def create_bokeh_app():
 
         source = ColumnDataSource(display_df)
 
-        spx_div = Div(text=f"<b>SPX Price:</b> {spx_price:.2f}")
-        vix_div = Div(text=f"<b>VIX Price:</b> {vix_price:.2f}")
+        spx_div = Div(text=f"<b>{UNDERLYING_SYMBOL} Price:</b> {spx_price:.2f}")
+        vix_div = Div(text=f"<b>{VIX_SYMBOL} Price:</b> {vix_price:.2f}")
         account_div_1 = Div(text=f"<b>Liquidation Value:</b> ${liquidation_amount:,.0f}")
         account_div_2 = Div(text=f"<b>Capital at Risk:</b> ${base_capital * lev_slider.value:,.0f}")
 
@@ -888,7 +940,7 @@ def create_bokeh_app():
         def update_account_values():
             liquidation_value = get_account_tag(ib_wrapper.ib, 'NetLiquidationByCurrency')
             liquidation_amount = float(liquidation_value[0].value) if liquidation_value else 0.0
-            state['base_capital'] = illiquid_equity(discount=0.5) + liquidation_amount
+            state['base_capital'] = illiquid_equity(discount=ILLIQUID_EQUITY_DISCOUNT) + liquidation_amount
             account_div_1.text = f"<b>Liquidation Value:</b> ${liquidation_amount:,.0f}"
             account_div_2.text = f"<b>Capital at Risk:</b> ${state['base_capital'] * lev_slider.value:,.0f}"
             if state['data_df'].empty:
@@ -990,13 +1042,19 @@ def create_bokeh_app():
 
             current_spx_price = float(data_df['spot_price'].iloc[0])
             current_vix_price = float(data_df['sigma'].iloc[0]) * 100
-            price_tracker.update_price('SPX', current_spx_price)
-            price_tracker.update_price('VIX', current_vix_price)
+            price_tracker.update_price(UNDERLYING_SYMBOL, current_spx_price)
+            price_tracker.update_price(VIX_SYMBOL, current_vix_price)
 
-            spx_color = price_tracker.get_trend('SPX')
-            vix_color = price_tracker.get_trend('VIX')
-            spx_div.text = f"<b>SPX Price:</b> <span style='color:{spx_color}'>{current_spx_price:.2f}</span>"
-            vix_div.text = f"<b>VIX Price:</b> <span style='color:{vix_color}'>{current_vix_price:.2f}</span>"
+            spx_color = price_tracker.get_trend(UNDERLYING_SYMBOL)
+            vix_color = price_tracker.get_trend(VIX_SYMBOL)
+            spx_div.text = (
+                f"<b>{UNDERLYING_SYMBOL} Price:</b> "
+                f"<span style='color:{spx_color}'>{current_spx_price:.2f}</span>"
+            )
+            vix_div.text = (
+                f"<b>{VIX_SYMBOL} Price:</b> "
+                f"<span style='color:{vix_color}'>{current_vix_price:.2f}</span>"
+            )
 
         def on_leverage_change(attr, old, new):
             if state['rebuilding'] or state['data_df'].empty:
