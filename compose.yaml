@@ -1,0 +1,18 @@
+services:
+  option-stream:
+    build: .
+    init: true
+    ports:
+      - "127.0.0.1:5006:5006"
+    environment:
+      OPT_TRADE_IB_HOST: host.docker.internal
+      OPT_TRADE_IB_GATEWAY_PORT: "${OPT_TRADE_IB_GATEWAY_PORT:-4001}"
+      OPT_TRADE_TWS_PORT: "${OPT_TRADE_TWS_PORT:-7496}"
+      OPT_TRADE_CONFIG_PLIST: /run/config/config.plist
+    volumes:
+      - type: bind
+        source: "${OPT_TRADE_CONFIG_PLIST_PATH:-${HOME}/Library/Mobile Documents/com~apple~CloudDocs/localDB/config.plist}"
+        target: /run/config/config.plist
+        read_only: true
+        bind:
+          create_host_path: false
