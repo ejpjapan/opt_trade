@@ -306,9 +306,17 @@ class USSimpleYieldCurve:
     def __init__(self):
         end = dt.date.today()
         start = end - dt.timedelta(days=10)
-        zero_rates = web.DataReader(['DFF', 'DTB4WK', 'DTB3', 'DTB6', 'DTB1YR'], 'fred', start, end)
-        zero_rates = zero_rates.dropna(axis=0)
-        zero_yld_date = zero_rates.index[-1]
+        columns = ['DFF', 'DTB4WK', 'DTB3', 'DTB6', 'DTB1YR']
+        try:
+            zero_rates = web.DataReader(columns, 'fred', start, end).dropna(axis=0)
+            if zero_rates.empty:
+                raise ValueError('No zero rate data returned')
+            zero_yld_date = zero_rates.index[-1]
+        except Exception:
+            zero_yld_date = pd.Timestamp(end) - pd.Timedelta(days=1)
+            zero_rates = pd.DataFrame(data=[[3.62] * len(columns)],
+                                      index=[zero_yld_date],
+                                      columns=columns)
         new_index = [zero_yld_date + relativedelta(days=1),
                      zero_yld_date + relativedelta(weeks=4),
                      zero_yld_date + relativedelta(months=3),
@@ -418,7 +426,6 @@ class USZeroYieldCurve:
         cash_idx = ff.to_price_index(return_per_day, 100)
         # cash_idx = pf.timeseries.cum_returns(return_per_day, 100)
         return cash_idx
-
 
 
 

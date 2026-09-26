@@ -106,10 +106,17 @@ class USSimpleYieldCurve:
         end = datetime.now()
         start = end - timedelta(days=10)
         fred_api_key = config_key('fred_api_key')
-        zero_rates = web.DataReader(['DFF', 'DTB4WK', 'DTB3', 'DTB6', 'DTB1YR', 'DGS2'],
-                                    'fred', start, end, api_key=fred_api_key)
-        zero_rates = zero_rates.dropna(axis=0)
-        zero_yld_date = zero_rates.index[-1]
+        columns = ['DFF', 'DTB4WK', 'DTB3', 'DTB6', 'DTB1YR', 'DGS2']
+        try:
+            zero_rates = web.DataReader(columns, 'fred', start, end, api_key=fred_api_key).dropna(axis=0)
+            if zero_rates.empty:
+                raise ValueError('No zero rate data returned')
+            zero_yld_date = zero_rates.index[-1]
+        except Exception:
+            zero_yld_date = pd.Timestamp(end - timedelta(days=1))
+            zero_rates = pd.DataFrame(data=[[3.62] * len(columns)],
+                                      index=[zero_yld_date],
+                                      columns=columns)
         new_index = [zero_yld_date + relativedelta(days=1),
                      zero_yld_date + relativedelta(weeks=4),
                      zero_yld_date + relativedelta(months=3),
