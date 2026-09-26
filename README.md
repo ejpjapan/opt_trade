@@ -19,6 +19,28 @@ Requires active session of Interactive Brokers TWS or IB Gateway
 
 Requires directory structure defined in UpdateSP500Data class
 
+### Run the live option stream with Docker
+
+Install and start Docker Desktop, and wait until its engine is running. Then start and log in to Trader Workstation (TWS) or IB Gateway on your Mac. Enable API socket connections in TWS. From the repository root, run:
+
+```sh
+docker compose up --build
+```
+
+Open http://localhost:5006/main in your browser. Compose mounts the app's existing `~/Library/Mobile Documents/com~apple~CloudDocs/localDB/config.plist` read-only; it does not copy the file into the image. If your plist is elsewhere, set `OPT_TRADE_CONFIG_PLIST_PATH` to its absolute path before running Compose.
+
+The defaults target live TWS on port 7496 or live IB Gateway on port 4001. The app tries Gateway first. For a paper session, use:
+
+```sh
+OPT_TRADE_TWS_PORT=7497 OPT_TRADE_IB_GATEWAY_PORT=4002 docker compose up --build
+```
+
+The container reaches TWS through Docker Desktop's [`host.docker.internal`](https://docs.docker.com/desktop/features/networking/networking-how-tos/). If TWS rejects the connection, check its API socket port and follow [IBKR's remote API connection settings](https://www.interactivebrokers.com/docs/tws-api/doc/connectivity/remote-tws-api-connections-with-trader-workstation): turn off "Allow connection from localhost only" and add the IP shown in the TWS connection prompt to Trusted IPs. The app only reads data, so TWS's Read-Only API setting can stay enabled. Keep TWS running and logged in; Docker packages only this Bokeh app. Live SPX, VIX, and SPXW quotes still require the corresponding IBKR market data permissions.
+
+Docker keeps the Conda packages from `environment.yml` together with the app and makes it easy to run on another machine with the same setup. The first build downloads those packages and can be large; source or dependency changes require another build. Stop the app with Ctrl+C or `docker compose down`.
+
+If Compose reports that `~/.docker/run/docker.sock` does not exist, Docker Desktop's engine has not started. Open Docker Desktop or run `docker desktop start`, wait for it to finish, then retry `docker compose up --build`. Run `docker info` to check that the engine responds.
+
 ### Example
 
 Equity index option simulation example

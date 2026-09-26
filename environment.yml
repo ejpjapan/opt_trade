@@ -6,6 +6,11 @@ channels:
 
 dependencies:
   - python=3.12
+  - bokeh
+  - ib-insync
+  - nest-asyncio
+  - numpy
   - pandas
-  -
-  - pip
+  - pandas-datareader
+  - python-dateutil
+  - scipy
