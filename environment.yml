@@ -1,0 +1,11 @@
+name: ptk_312
+
+channels:
+  - conda-forge
+  - nodefaults
+
+dependencies:
+  - python=3.12
+  - pandas
+  -
+  - pip
