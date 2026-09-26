@@ -41,6 +41,8 @@ Docker keeps the Conda packages from `environment.yml` together with the app and
 
 If Compose reports that `~/.docker/run/docker.sock` does not exist, Docker Desktop's engine has not started. Open Docker Desktop or run `docker desktop start`, wait for it to finish, then retry `docker compose up --build`. Run `docker info` to check that the engine responds.
 
+For a desktop shortcut on this Mac, double-click `Option Stream.command` on the Desktop. It opens Trader Workstation, starts Docker Desktop if needed, waits for the TWS API on the standard live or paper port, starts the Compose service, and opens the Bokeh page. Finish logging in to TWS when prompted. The shortcut runs [launch_option_stream.command](launch_option_stream.command); set `OPT_TRADE_TWS_PORT` in the shell before running that script directly if TWS uses a custom port. Stop the container with `docker compose down` from the repository root.
+
 ### Example
 
 Equity index option simulation example
