@@ -105,10 +105,9 @@ class USSimpleYieldCurve:
     def __init__(self):
         end = datetime.now()
         start = end - timedelta(days=10)
-        fred_api_key = config_key('fred_api_key')
         columns = ['DFF', 'DTB4WK', 'DTB3', 'DTB6', 'DTB1YR', 'DGS2']
         try:
-            zero_rates = web.DataReader(columns, 'fred', start, end, api_key=fred_api_key).dropna(axis=0)
+            zero_rates = web.DataReader(columns, 'fred', start, end).dropna(axis=0)
             if zero_rates.empty:
                 raise ValueError('No zero rate data returned')
             zero_yld_date = zero_rates.index[-1]
